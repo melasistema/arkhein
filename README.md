@@ -29,55 +29,45 @@ Our goal is to build a "Private-First" assistant that operates entirely on your 
 ### Prerequisites
 
 1.  **macOS:** Arkhein is optimized for macOS.
-2.  **Ollama:** Must be installed and running locally.
-    ```bash
-    brew install ollama
-    ollama serve
-    ```
-3.  **Redis Stack:** A running instance of Redis Stack is required for vector search capabilities.
-    ```bash
-    docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
-    ```
-4.  **PHP 8.2+** & **Composer**
-5.  **Node.js** & **NPM**
+2.  **Docker:** Required for running the services via Laravel Sail.
 
-### Installation
+### Installation & Setup
 
-1.  Clone the repository:
+1.  Clone and install dependencies:
     ```bash
     git clone https://github.com/yourusername/arkhein.git
     cd arkhein
-    ```
-
-2.  Install PHP dependencies:
-    ```bash
     composer install
-    ```
-
-3.  Install Node dependencies:
-    ```bash
     npm install
     ```
 
-4.  Configure Environment:
+2.  Start the environment (Sail):
     ```bash
-    cp .env.example .env
-    php artisan key:generate
+    ./vendor/bin/sail up -d
     ```
-    *Update `.env` with your Redis Stack credentials if necessary.*
 
-5.  Run the application (Development):
+3.  Verify AI Connectivity:
+    Pull the required models and run the test command:
     ```bash
-    php artisan native:serve
+    docker exec arkhein-ollama-1 ollama pull llama3.2:1b
+    docker exec arkhein-ollama-1 ollama pull nomic-embed-text
+    ./vendor/bin/sail artisan test:ai
+    ```
+
+4.  Run the application:
+    ```bash
+    ./vendor/bin/sail artisan native:serve
     ```
 
 ## 🗺️ Roadmap
 
-- [ ] **Core Setup:** Initialize NativePHP and Predis integration.
-- [ ] **AI Connection:** Implement Ollama client for local inference.
-- [ ] **Memory Layer:** Implement Redis Stack vector storage for conversation history.
-- [ ] **UI/UX:** Build a chat interface with Vue/Inertia.
+- [x] **Core Setup:** Initialize NativePHP and Predis integration.
+- [x] **AI Connection:** Implement Ollama client for local inference.
+- [x] **Memory Layer:** Implement Redis Stack vector storage for conversation history.
+- [x] **UI/UX:** Build a chat interface with Vue/Inertia.
 - [ ] **System Integration:** Add OS-level hooks (hotkeys, file access).
+- [ ] **File Indexing:** Allow Arkhein to read and index your local files for better context.
+- [ ] **NativePHP Packaging:** Build and bundle the app for distribution.
 
 ## 📄 License
 

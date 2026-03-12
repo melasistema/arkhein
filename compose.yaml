@@ -17,45 +17,24 @@ services:
             XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-off}'
             XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
             IGNITION_LOCAL_SITES_PATH: '${PWD}'
+            REDIS_HOST: redis
+            OLLAMA_HOST: http://ollama:11434
         volumes:
             - '.:/var/www/html'
         networks:
             - sail
         depends_on:
-            - pgsql
             - redis
-    pgsql:
-        image: 'postgres:18-alpine'
-        ports:
-            - '${FORWARD_DB_PORT:-5432}:5432'
-        environment:
-            PGPASSWORD: '${DB_PASSWORD:-secret}'
-            POSTGRES_DB: '${DB_DATABASE}'
-            POSTGRES_USER: '${DB_USERNAME}'
-            POSTGRES_PASSWORD: '${DB_PASSWORD:-secret}'
-        volumes:
-            - 'sail-pgsql:/var/lib/postgresql'
-            - './vendor/laravel/sail/database/pgsql/create-testing-database.sql:/docker-entrypoint-initdb.d/10-create-testing-database.sql'
-        networks:
-            - sail
-        healthcheck:
-            test:
-                - CMD
-                - pg_isready
-                - '-q'
-                - '-d'
-                - '${DB_DATABASE}'
-                - '-U'
-                - '${DB_USERNAME}'
-            retries: 3
-            timeout: 5s
+            - ollama
     redis:
-        image: 'redis/redis-stack-server:latest'
+        image: 'redis/redis-stack:latest'
         ports:
             - '${FORWARD_REDIS_PORT:-6379}:6379'
             - '${FORWARD_REDIS_INSIGHT_PORT:-8001}:8001'
         volumes:
-            - 'sail-redis:/data'
+            - './docker/redis:/data'
+        environment:
+            REDIS_ARGS: '--appendonly yes'
         networks:
             - sail
         healthcheck:
@@ -70,30 +49,9 @@ services:
         ports:
             - '${FORWARD_OLLAMA_PORT:-11434}:11434'
         volumes:
-            - 'sail-ollama:/root/.ollama'
-        networks:
-            - sail
-        # Uncomment for GPU support (NVIDIA)
-        # deploy:
-        #     resources:
-        #         reservations:
-        #             devices:
-        #                 - driver: nvidia
-        #                   count: 1
-        #                   capabilities: [gpu]
-    adminer:
-        image: 'adminer:latest'
-        ports:
-            - 8080:8080
+            - './docker/ollama:/root/.ollama'
         networks:
             - sail
 networks:
     sail:
         driver: bridge
-volumes:
-    sail-pgsql:
-        driver: local
-    sail-redis:
-        driver: local
-    sail-ollama:
-        driver: local

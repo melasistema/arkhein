@@ -19,12 +19,17 @@ class OllamaService
      */
     public function generate(string $model, string $prompt, array $options = [])
     {
-        $response = Http::post("{$this->host}/api/generate", [
+        $payload = [
             'model' => $model,
             'prompt' => $prompt,
             'stream' => false,
-            'options' => $options,
-        ]);
+        ];
+
+        if (!empty($options)) {
+            $payload['options'] = $options;
+        }
+
+        $response = Http::post("{$this->host}/api/generate", $payload);
 
         if ($response->failed()) {
             Log::error("Ollama generate failed: " . $response->body());

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageSquare, Send, Bot, User, BrainCircuit } from 'lucide-vue-next';
+import { chat } from '@/routes';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -17,7 +18,7 @@ interface Message {
 const breadcrumbs = [
     {
         title: 'Chat',
-        href: '/chat',
+        href: chat.url(),
     },
 ];
 
