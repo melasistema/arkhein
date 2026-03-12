@@ -2,64 +2,36 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Redis;
+use Centamiv\Vektor\Core\Config;
+use Centamiv\Vektor\Services\Indexer;
+use Centamiv\Vektor\Services\Searcher;
 use Illuminate\Support\Facades\Log;
 
 class MemoryService
 {
-    protected string $indexName = 'arkhein:memory';
+    protected string $storagePath;
+    protected string $metadataPath;
 
-    /**
-     * Ensure the search index exists.
-     */
-    public function ensureIndex(int $dimensions = 768)
+    public function __construct()
     {
-        try {
-            $indices = Redis::executeRaw(['FT._LIST']);
-            if (is_array($indices) && in_array($this->indexName, $indices)) {
-                return true;
-            }
-            return $this->createIndex($dimensions);
-        } catch (\Exception $e) {
-            Log::error("Failed to check/create Redis index: " . $e->getMessage());
-            return $this->createIndex($dimensions);
+        $this->storagePath = storage_path('app/vektor');
+        $this->metadataPath = storage_path('app/vektor/metadata.json');
+        
+        if (!file_exists($this->storagePath)) {
+            mkdir($this->storagePath, 0755, true);
         }
+
+        // Set the storage path for Vektor
+        Config::setDataDir($this->storagePath);
     }
 
     /**
-     * Create the RediSearch index for vector search.
+     * Compatibility method for our previous implementation.
      */
-    protected function createIndex(int $dimensions)
+    public function ensureIndex(int $dimensions = 768)
     {
-        try {
-            // Drop existing if any to be safe
-            try {
-                Redis::executeRaw(['FT.DROPINDEX', $this->indexName]);
-            } catch (\Exception $e) {}
-
-            $command = [
-                'FT.CREATE', $this->indexName,
-                'ON', 'JSON',
-                'PREFIX', '1', 'memory:',
-                'SCHEMA',
-                '$.content', 'AS', 'content', 'TEXT',
-                '$.embedding', 'AS', 'embedding', 'VECTOR', 'HNSW', '6', 
-                'TYPE', 'FLOAT32', 
-                'DIM', (string) $dimensions, 
-                'DISTANCE_METRIC', 'COSINE'
-            ];
-            
-            $result = Redis::executeRaw($command);
-            
-            if ($result !== 'OK' && $result !== true) {
-                Log::error("FT.CREATE returned unexpected result: " . json_encode($result));
-            }
-            
-            return true;
-        } catch (\Exception $e) {
-            Log::error("Failed to create Redis index: " . $e->getMessage());
-            return false;
-        }
+        Config::setDimensions($dimensions);
+        return true;
     }
 
     /**
@@ -67,20 +39,23 @@ class MemoryService
      */
     public function save(string $id, string $content, array $embedding, array $metadata = [])
     {
-        $key = "memory:{$id}";
-        
-        $data = [
-            'content' => $content,
-            'embedding' => $embedding,
-            'metadata' => $metadata,
-            'timestamp' => time(),
-        ];
-
         try {
-            Redis::executeRaw(['JSON.SET', $key, '$', json_encode($data)]);
+            Config::setDimensions(count($embedding));
+            $indexer = new Indexer();
+            
+            // Insert into Vektor
+            $indexer->insert($id, $embedding);
+            
+            // Save metadata locally in a JSON file
+            $this->saveMetadata($id, [
+                'content' => $content,
+                'metadata' => $metadata,
+                'timestamp' => time()
+            ]);
+            
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to save memory to Redis: " . $e->getMessage());
+            Log::error("Failed to save memory to Vektor: " . $e->getMessage());
             return false;
         }
     }
@@ -90,54 +65,54 @@ class MemoryService
      */
     public function search(array $vector, int $limit = 5)
     {
-        // Vector search syntax for RediSearch
-        // *=>[KNN $limit @embedding $vector AS score]
-        
-        // We need to pack the vector into binary format (FLOAT32)
-        $binaryVector = '';
-        foreach ($vector as $val) {
-            $binaryVector .= pack('f', $val);
-        }
-
         try {
-            $results = Redis::executeRaw([
-                'FT.SEARCH', $this->indexName,
-                "*=>[KNN $limit @embedding \$vec AS score]",
-                'PARAMS', '2', 'vec', $binaryVector,
-                'DIALECT', '2',
-                'RETURN', '3', 'content', 'metadata', 'score',
-                'SORTBY', 'score', 'ASC'
-            ]);
+            Config::setDimensions(count($vector));
+            $searcher = new Searcher();
+            
+            $results = $searcher->search($vector, $limit);
 
             return $this->parseResults($results);
         } catch (\Exception $e) {
-            Log::error("Redis search failed: " . $e->getMessage());
+            Log::error("Vektor search failed: " . $e->getMessage());
             return [];
         }
     }
 
+    protected function saveMetadata(string $id, array $data)
+    {
+        $allMetadata = [];
+        if (file_exists($this->metadataPath)) {
+            $allMetadata = json_decode(file_get_contents($this->metadataPath), true) ?: [];
+        }
+        
+        $allMetadata[$id] = $data;
+        file_put_contents($this->metadataPath, json_encode($allMetadata));
+    }
+
+    protected function getMetadata(string $id)
+    {
+        if (!file_exists($this->metadataPath)) {
+            return null;
+        }
+        
+        $allMetadata = json_decode(file_get_contents($this->metadataPath), true) ?: [];
+        return $allMetadata[$id] ?? null;
+    }
+
     protected function parseResults($results)
     {
-        if (!is_array($results) || count($results) <= 1) {
-            if (!is_array($results)) {
-                Log::debug("Redis search returned non-array: " . json_encode($results));
-            }
-            return [];
-        }
-
-        $count = $results[0];
         $parsed = [];
 
-        // Results are in a flat list: [count, key1, [field1, val1, ...], key2, ...]
-        for ($i = 1; $i < count($results); $i += 2) {
-            $key = $results[$i];
-            $fields = $results[$i + 1];
+        foreach ($results as $result) {
+            $id = $result['id'];
+            $meta = $this->getMetadata($id);
             
-            $item = ['id' => $key];
-            for ($j = 0; $j < count($fields); $j += 2) {
-                $item[$fields[$j]] = $fields[$j + 1];
-            }
-            $parsed[] = $item;
+            $parsed[] = [
+                'id' => $id,
+                'content' => $meta['content'] ?? '',
+                'score' => $result['score'] ?? 0,
+                'metadata' => $meta['metadata'] ?? []
+            ];
         }
 
         return $parsed;

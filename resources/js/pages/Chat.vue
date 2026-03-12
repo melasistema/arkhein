@@ -31,7 +31,23 @@ const messages = ref<Message[]>([
 
 const newMessage = ref('');
 const isLoading = ref(false);
+const isOllamaOnline = ref(true);
 const scrollAreaRef = ref<any>(null);
+
+const checkOllamaStatus = async () => {
+    try {
+        const response = await axios.get('/ollama/status');
+        isOllamaOnline.value = response.data.online;
+    } catch (error) {
+        isOllamaOnline.value = false;
+    }
+};
+
+// Check status on mount
+import { onMounted } from 'vue';
+onMounted(() => {
+    checkOllamaStatus();
+});
 
 const scrollToBottom = async () => {
     await nextTick();
@@ -84,12 +100,31 @@ const sendMessage = async () => {
                 <BrainCircuit class="h-6 w-6 text-primary" />
                 <h1 class="text-xl font-semibold tracking-tight">Arkhein Assistant</h1>
                 <div class="ml-auto flex items-center gap-2">
-                    <span class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                    <span v-if="isOllamaOnline" class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/30 dark:text-green-400">
                         Local Ollama Active
                     </span>
-                    <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
-                        Redis Memory Ready
+                    <span v-else class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                        Ollama Offline
                     </span>
+                    <span class="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
+                        Vektor Memory Ready
+                    </span>
+                </div>
+            </div>
+
+            <div v-if="!isOllamaOnline" class="rounded-lg border border-red-200 bg-red-50 p-4 dark:border-red-900/50 dark:bg-red-900/10">
+                <div class="flex items-center gap-3 text-red-800 dark:text-red-400">
+                    <Bot class="h-5 w-5" />
+                    <div class="text-sm">
+                        <p class="font-medium">Ollama is not running</p>
+                        <p class="mt-1">Arkhein requires Ollama for local intelligence. Please download and start Ollama to continue.</p>
+                        <a href="https://ollama.com/download" target="_blank" class="mt-2 inline-block text-xs font-semibold underline underline-offset-2">
+                            Download Ollama for macOS
+                        </a>
+                    </div>
+                    <Button variant="outline" size="sm" class="ml-auto" @click="checkOllamaStatus">
+                        Retry
+                    </Button>
                 </div>
             </div>
 
