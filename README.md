@@ -2,9 +2,9 @@
 
 > **Status:** Concept / Pre-Alpha
 
-Arkhein is a NativePHP desktop application for macOS that prioritizes privacy and local intelligence. It combines the power of local LLMs via **Ollama** with a high-performance, pure PHP vector store (**Vektor**) to create a conversational assistant that lives entirely on your machine.
+Arkhein is a NativePHP desktop application for macOS that prioritizes privacy and local intelligence. It combines the power of local LLMs via **Ollama** with a high-performance, pure PHP vector store (**Vektor**) to create a conversational and active assistant that lives entirely on your machine.
 
-## 🌟 Vision
+## Vision
 
 Our goal is a "Private-First" experience. No cloud, no API keys, no data leakage. Arkhein is designed to be OS X-centric, integrating seamlessly with your workflow using natural language.
 
@@ -16,7 +16,7 @@ Our goal is a "Private-First" experience. No cloud, no API keys, no data leakage
 *   **🤖 Local Inference:** Integrates with **Ollama**. Bring your own open-source models (Llama 3.2, Mistral, Gemma, etc.).
 *   **💬 Natural Language:** Interface with your system and data naturally.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 *   **Framework:** [Laravel 12](https://laravel.com)
 *   **Desktop Shell:** [NativePHP](https://nativephp.com)
@@ -24,7 +24,7 @@ Our goal is a "Private-First" experience. No cloud, no API keys, no data leakage
 *   **AI Engine:** [Ollama](https://ollama.com)
 *   **Frontend:** [Vue 3](https://vuejs.org) + [Inertia.js](https://inertiajs.com) + [Shadcn UI](https://www.shadcn-vue.com/)
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -79,6 +79,6 @@ php artisan native:serve
 - [ ] **Phase 2: OS Integration:** Global hotkeys and system-level actions.
 - [ ] **Packaging:** One-click DMG installer for distribution.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT license.
