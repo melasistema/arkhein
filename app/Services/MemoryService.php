@@ -78,6 +78,32 @@ class MemoryService
         }
     }
 
+    /**
+     * Clear all memory (used when changing dimensions/models).
+     */
+    public function reset()
+    {
+        try {
+            $files = [
+                Config::getVectorFile(),
+                Config::getGraphFile(),
+                Config::getMetaFile(),
+                Config::getLockFile(),
+                $this->metadataPath
+            ];
+
+            foreach ($files as $file) {
+                if (file_exists($file)) {
+                    unlink($file);
+                }
+            }
+            return true;
+        } catch (\Exception $e) {
+            Log::error("Failed to reset Vektor memory: " . $e->getMessage());
+            return false;
+        }
+    }
+
     protected function saveMetadata(string $id, array $data)
     {
         $allMetadata = [];

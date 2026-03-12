@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, MessageSquare } from 'lucide-vue-next';
+import { BookOpen, FolderGit2, LayoutGrid, MessageSquare, Settings } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import {
@@ -12,7 +12,7 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
-import { dashboard, chat } from '@/routes';
+import { dashboard, chat, settings } from '@/routes';
 import type { NavItem } from '@/types';
 
 const mainNavItems: NavItem[] = [
@@ -25,6 +25,11 @@ const mainNavItems: NavItem[] = [
         title: 'Chat',
         href: chat.url(),
         icon: MessageSquare,
+    },
+    {
+        title: 'Settings',
+        href: settings.url(),
+        icon: Settings,
     },
 ];
 

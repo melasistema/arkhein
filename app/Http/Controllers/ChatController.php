@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use App\Models\Setting;
 use App\Services\OllamaService;
 use App\Services\MemoryService;
 use Illuminate\Support\Str;
@@ -18,14 +19,16 @@ class ChatController extends Controller
     public function send(Request $request, OllamaService $ollama, MemoryService $memory)
     {
         $input = $request->input('message');
-        $model = config('services.ollama.model', 'llama3');
-        $embeddingModel = config('services.ollama.embedding_model', 'nomic-embed-text');
+        
+        $model = Setting::get('llm_model', config('services.ollama.model', 'llama3.2:1b'));
+        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model', 'nomic-embed-text:latest'));
+        $dimensions = (int) Setting::get('embedding_dimensions', 768);
 
         // 1. Generate embedding for user input
         $queryEmbedding = $ollama->embeddings($embeddingModel, $input);
 
         // 2. Search for similar memories
-        $memory->ensureIndex(count($queryEmbedding));
+        $memory->ensureIndex($dimensions);
         $similarMemories = $memory->search($queryEmbedding, 3);
 
         // 3. Construct prompt with context
