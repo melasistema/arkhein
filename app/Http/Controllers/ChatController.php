@@ -42,11 +42,27 @@ class ChatController extends Controller
 
         $prompt = "Context: $context\nUser: $input\nAssistant:";
         
-        // 4. Generate response
-        $response = $ollama->generate($model, $prompt);
+        // 4. Inject Persona: The Architect of the Shell
+        $systemPrompt = config('ai.system_prompt');
+        $systemPrompt = str_replace(
+            ['{name}', '{role}', '{intention}', '{personality}', '{ethics}'],
+            [
+                config('ai.name'),
+                config('ai.role'),
+                config('ai.intention'),
+                implode("\n- ", config('ai.personality')),
+                implode("\n- ", config('ai.ethics'))
+            ],
+            $systemPrompt
+        );
+
+        $finalPrompt = "System: $systemPrompt\n\n$prompt";
+
+        // 5. Generate response
+        $response = $ollama->generate($model, $finalPrompt);
         $assistantMessage = $response['response'] ?? "I'm sorry, I couldn't generate a response.";
 
-        // 5. Save this interaction as a new memory
+        // 6. Save this interaction as a new memory
         $memory->save(Str::uuid(), "User: $input\nAssistant: $assistantMessage", $queryEmbedding, ['type' => 'chat']);
 
         return response()->json([

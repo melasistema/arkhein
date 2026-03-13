@@ -30,7 +30,22 @@ class MemoryService
      */
     public function ensureIndex(int $dimensions = 768)
     {
+        // 1. Set dimensions FIRST so Vektor knows the row size
         Config::setDimensions($dimensions);
+
+        // 2. Detect Dimension Mismatch
+        $vectorFile = Config::getVectorFile();
+        if (file_exists($vectorFile) && filesize($vectorFile) > 0) {
+            clearstatcache(true, $vectorFile);
+            $expectedRowSize = Config::getVectorRowSize();
+            $actualSize = filesize($vectorFile);
+            
+            if ($actualSize % $expectedRowSize !== 0) {
+                Log::warning("Vektor dimension mismatch detected. Expected Row: $expectedRowSize, File Size: $actualSize. Resetting memory database.");
+                $this->reset();
+            }
+        }
+
         return true;
     }
 
