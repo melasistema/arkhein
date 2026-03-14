@@ -35,7 +35,7 @@ return [
         'nativephp' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
-            'database' => database_path('nativephp.sqlite'),
+            'database' => env('DB_NATIVEPHP_DATABASE', database_path('nativephp.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
             'busy_timeout' => 5000, // 5 seconds

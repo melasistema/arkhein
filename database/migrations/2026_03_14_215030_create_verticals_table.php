@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::connection('nativephp')->create('verticals', function (Blueprint $table) {
+        Schema::create('verticals', function (Blueprint $table) {
             $table->id();
             $table->string('name');
             $table->string('type')->default('rag'); // rag, vision, code_analysis
@@ -20,6 +20,6 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::connection('nativephp')->dropIfExists('verticals');
+        Schema::dropIfExists('verticals');
     }
 };
