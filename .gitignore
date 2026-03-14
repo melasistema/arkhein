@@ -27,3 +27,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+/.github
+GEMINI.md
+CLAUDE.md
+AGENTS.md
