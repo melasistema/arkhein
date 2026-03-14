@@ -25,8 +25,14 @@ class OllamaService
             'stream' => false,
         ];
 
-        if (!empty($options)) {
-            $payload['options'] = $options;
+        // Format (e.g. 'json')
+        if (isset($options['format'])) {
+            $payload['format'] = $options['format'];
+        }
+
+        // Internal Ollama Model Options
+        if (isset($options['options'])) {
+            $payload['options'] = $options['options'];
         }
 
         $response = Http::post("{$this->host}/api/generate", $payload);

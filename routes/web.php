@@ -12,6 +12,8 @@ Route::get('/', [ChatController::class, 'index'])->name('chat');
 Route::middleware([])->group(function () {
     Route::inertia('dashboard', 'Dashboard')->name('dashboard');
     Route::get('/chat/suggestions', [ChatController::class, 'suggestions'])->name('chat.suggestions');
+    Route::post('/chat/start', [ChatController::class, 'start'])->name('chat.start');
+    Route::get('/chat/history/{conversation}', [ChatController::class, 'history'])->name('chat.history');
     Route::post('/chat/send', [ChatController::class, 'send'])->name('chat.send');
     Route::post('/chat/action/execute', [ChatController::class, 'executePendingAction'])->name('chat.action.execute');
     Route::get('/ollama/status', [OllamaStatusController::class, 'check'])->name('ollama.status');

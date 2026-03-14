@@ -10,108 +10,116 @@ use App\Services\OllamaService;
 use App\Services\MemoryService;
 use App\Services\KnowledgeService;
 use App\Services\FileOperationService;
+use App\Services\PromptService;
+use App\Services\IntentService;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
+
+use App\Models\Conversation;
+use App\Models\Message;
 
 class ChatController extends Controller
 {
     public function index()
     {
-        return Inertia::render('Chat');
+        return Inertia::render('Chat', [
+            'conversations' => Conversation::latest()->get(),
+        ]);
+    }
+
+    public function start(Request $request)
+    {
+        $request->validate(['title' => 'required|string|max:255']);
+        $conversation = Conversation::create(['title' => $request->title]);
+        return response()->json($conversation);
+    }
+
+    public function history(Conversation $conversation)
+    {
+        return response()->json([
+            'messages' => $conversation->messages()->oldest()->get()
+        ]);
     }
 
     public function suggestions(FileOperationService $files)
     {
         $authorizedFiles = $files->listAuthorizedFiles();
         $folders = ManagedFolder::all()->map(fn($f) => [
-            'type' => 'folder',
-            'name' => $f->name,
-            'path' => $f->path
+            'type' => 'folder', 'name' => $f->name, 'path' => $f->path
         ]);
-
         $fileItems = collect($authorizedFiles)->map(fn($f) => [
-            'type' => 'file',
-            'name' => $f['name'],
-            'path' => $f['path']
+            'type' => 'file', 'name' => $f['name'], 'path' => $f['path']
         ]);
-
-        return response()->json([
-            'items' => $folders->concat($fileItems)->values()
-        ]);
+        return response()->json(['items' => $folders->concat($fileItems)->values()]);
     }
 
-    public function send(Request $request, OllamaService $ollama, KnowledgeService $knowledge, FileOperationService $files)
-    {
+    public function send(
+        Request $request, 
+        OllamaService $ollama, 
+        KnowledgeService $knowledge, 
+        FileOperationService $files,
+        PromptService $prompts,
+        IntentService $intents
+    ) {
         $input = $request->input('message');
-        
-        // Dynamic Model Selection from Database
+        $conversationId = $request->input('conversation_id');
+        $conversation = Conversation::findOrFail($conversationId);
+
+        // 1. Build Context & Settings
         $model = Setting::get('llm_model', config('services.ollama.model', 'llama3.2:1b'));
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model', 'nomic-embed-text:latest'));
         $dimensions = (int) Setting::get('embedding_dimensions', 768);
 
-        // 1. Context: File System Registry
+        // 2. Vectorize and Save User Message
+        $userEmbedding = $ollama->embeddings($embeddingModel, $input);
+        $conversation->messages()->create([
+            'role' => 'user', 
+            'content' => $input,
+            'embedding' => $userEmbedding
+        ]);
+
+        // Save User input to Knowledge base too
+        if ($userEmbedding) {
+            app(MemoryService::class)->save(Str::uuid(), "User Message: $input", $userEmbedding, 'chat_history', ['conversation_id' => $conversationId]);
+        }
+
+        // 3. Classify Intent
+        $intent = $intents->classify($input);
+
+        // 4. Build Context
         $authorizedFiles = $files->listAuthorizedFiles();
-        $fileContext = "ARCHIVE REGISTRY (Authorized paths only):\n";
+        $fileContext = "ARCHIVE REGISTRY:\n";
         foreach ($authorizedFiles as $f) {
             $fileContext .= "- {$f['name']} -> {$f['path']} ({$f['type']})\n";
         }
 
-        // 2. Intelligent Memory Recall (Deep Module)
         $relevantKnowledge = $knowledge->recall($input, 5);
-        $memContext = "DIGITAL MEMORY (Relevant insights):\n";
-        if (empty($relevantKnowledge)) {
-            $memContext .= "- No relevant memories found.\n";
-        } else {
-            foreach ($relevantKnowledge as $m) {
-                $memContext .= "- " . $m['content'] . "\n";
-            }
+        $memContext = "DIGITAL MEMORY:\n";
+        foreach ($relevantKnowledge as $m) {
+            $memContext .= "- " . $m['content'] . "\n";
         }
 
-        // 3. System Prompt with Action Capabilities
-        $actionDefinition = "
-ACTION PROTOCOL:
-You are the executor. To perform a task, append exactly one JSON block per action at the VERY END of your response.
+        $history = $conversation->messages()->latest()->limit(10)->get()->reverse();
+        $historyContext = "RECENT CONVERSATION:\n";
+        foreach ($history as $h) {
+            $historyContext .= strtoupper($h->role) . ": " . $h->content . "\n";
+        }
 
-Format: [ACTION:{\"type\":\"action_name\",\"params\":{}}]
+        // 5. Modular System Prompt
+        $systemPrompt = $prompts->buildSystemPrompt();
+        if ($intent === 'FILE_SYSTEM') {
+            $systemPrompt .= "\n\nCRITICAL: Detected Intent: FILE MANAGEMENT. You MUST use the ACTION PROTOCOL for all changes.";
+        } else {
+            $systemPrompt .= "\n\nCRITICAL: Detected Intent: GENERAL DIALOGUE. Prioritize conversation. Do NOT propose actions unless the user explicitly requests one.";
+        }
 
-Available Actions:
-- create_file: {\"path\":\"@folder/subpath/file.ext\", \"content\":\"text\"}
-- create_folder: {\"path\":\"@folder/new_dir\"}
-- organize_folder: {\"path\":\"@folder\"}
-- move_files: {\"from\":\"@folder/file.ext\", \"to\":\"@folder/new_dir/file.ext\"}
-- delete_file: {\"path\":\"@folder/file.ext\"}
-- delete_folder: {\"path\":\"@folder/subpath\"}
-- sync_archive: {}
+        $finalPrompt = "System: $systemPrompt\n\n$fileContext\n\n$memContext\n\n$historyContext\n\nUser: $input\nAssistant:";
 
-RULES:
-1. MANDATORY: Use the '@folder' format for all paths.
-2. Refer to the ARCHIVE REGISTRY above for valid @mentions.
-3. If creating a file in a sub-directory, ensure the directory exists or use create_folder first.
-4. Do NOT use absolute paths (/Users/...). Use @mentions only.";
-
-        $systemPrompt = str_replace(
-            ['{name}', '{role}', '{intention}', '{personality}', '{ethics}'],
-            [
-                config('ai.name'),
-                config('ai.role'),
-                config('ai.intention'),
-                implode("\n- ", config('ai.personality')),
-                implode("\n- ", config('ai.ethics'))
-            ],
-            config('ai.system_prompt')
-        );
-
-        $finalPrompt = "System: $systemPrompt\n\n$fileContext\n\n$memContext\n\n$actionDefinition\n\nUser: $input\nAssistant:";
-
-        Log::debug("Arkhein Prompt sent to Ollama", ['input' => $input]);
-
-        // 4. Generate response
+        // 6. Generate Response
         $response = $ollama->generate($model, $finalPrompt);
         $assistantMessage = $response['response'] ?? "I'm sorry, I couldn't generate a response.";
 
-        Log::debug("Arkhein Raw Response", ['response' => $assistantMessage]);
-
-        // 5. Parse Multiple Actions (Wait for User Confirmation)
+        // 7. Parse Actions
         $pendingActions = [];
         if (preg_match_all('/\[ACTION:(.*?)\]/', $assistantMessage, $matches)) {
             foreach ($matches[1] as $json) {
@@ -120,24 +128,30 @@ RULES:
                     $pendingActions[] = array_merge($actionData, ['status' => 'pending']);
                 }
             }
-            // Strip all action blocks from the visible message
             $assistantMessage = trim(preg_replace('/\[ACTION:.*?\]/', '', $assistantMessage));
         }
 
-        // 6. Async Reflection & Habit Learning (Silently update memory)
-        $knowledge->reflect($input, $assistantMessage);
+        // 8. Vectorize and Save Assistant Response
+        $assistantEmbedding = $ollama->embeddings($embeddingModel, $assistantMessage);
+        $conversation->messages()->create([
+            'role' => 'assistant',
+            'content' => $assistantMessage,
+            'embedding' => $assistantEmbedding,
+            'metadata' => ['pending_actions' => $pendingActions]
+        ]);
 
-        // 7. Save this interaction as a memory for future context
-        $interactionText = "User: $input\nAssistant: $assistantMessage";
-        $interactionEmbedding = $ollama->embeddings($embeddingModel, $interactionText);
-        if ($interactionEmbedding) {
-            app(MemoryService::class)->save(Str::uuid(), $interactionText, $interactionEmbedding, 'chat', ['type' => 'chat']);
+        // Save Assistant response to Knowledge base
+        if ($assistantEmbedding) {
+            app(MemoryService::class)->save(Str::uuid(), "Assistant Message: $assistantMessage", $assistantEmbedding, 'chat_history', ['conversation_id' => $conversationId]);
         }
+
+        // 9. Async Reflection
+        $knowledge->reflect($input, $assistantMessage);
 
         return response()->json([
             'message' => $assistantMessage,
-            'memories_used' => count($relevantKnowledge),
             'pending_actions' => $pendingActions,
+            'intent' => $intent
         ]);
     }
 
@@ -145,7 +159,6 @@ RULES:
     {
         $action = $request->input('action');
         $result = $this->executeAction($action, $files, $memory);
-
         return response()->json($result);
     }
 
@@ -153,27 +166,17 @@ RULES:
     {
         $type = $action['type'] ?? '';
         $params = $action['params'] ?? [];
-
         Log::debug("Arkhein Executing Action", ['type' => $type, 'params' => $params]);
 
         switch ($type) {
-            case 'create_file':
-                return $files->createFile($params['path'] ?? '', $params['content'] ?? '');
-            case 'create_folder':
-                return $files->createFolder($params['path'] ?? '');
-            case 'organize_folder':
-                return $files->organizeFolder($params['path'] ?? '');
-            case 'move_files':
-                return $files->moveFiles($params['from'] ?? '', $params['to'] ?? '');
-            case 'delete_file':
-                return $files->deleteFile($params['path'] ?? '');
-            case 'delete_folder':
-                return $files->deleteFolder($params['path'] ?? '');
-            case 'sync_archive':
-                $results = app(\App\Services\ArchiveService::class)->sync();
-                return ['success' => true, 'data' => $results];
-            default:
-                return ['success' => false, 'error' => 'Unknown action type.'];
+            case 'create_file': return $files->createFile($params['path'] ?? '', $params['content'] ?? '');
+            case 'create_folder': return $files->createFolder($params['path'] ?? '');
+            case 'organize_folder': return $files->organizeFolder($params['path'] ?? '');
+            case 'move_files': return $files->moveFiles($params['from'] ?? '', $params['to'] ?? '');
+            case 'delete_file': return $files->deleteFile($params['path'] ?? '');
+            case 'delete_folder': return $files->deleteFolder($params['path'] ?? '');
+            case 'sync_archive': return app(\App\Services\ArchiveService::class)->sync();
+            default: return ['success' => false, 'error' => 'Unknown action type.'];
         }
     }
 }

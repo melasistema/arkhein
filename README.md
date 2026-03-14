@@ -1,67 +1,47 @@
 # Arkhein - The Architect of the Shell
 
-> **Status:** Pre-Alpha / Core Architecture Established
+> **Status:** Pre-Alpha / Strategic Architecture Pivot Complete
 
 Arkhein is a sovereign, private-first macOS agent. It transforms your local computer into an active partner that understands your habits, commands your file system, and maintains a permanent, local digital memory—without a single byte ever leaving your machine.
 
-## 🗺️ System Map: How Arkhein Works
+## 🗺️ System Map: Core Architecture
 
-Arkhein is built on a **Deep Module Philosophy**: exposing a simple conversational shell while encapsulating complex AI pipelines.
+Arkhein adheres to a **Deep Module Philosophy**: exposing a simple conversational shell while encapsulating heavy AI logic behind modular services.
 
-### 1. The Mind (Inference & Persona)
-- **Local Intelligence:** Powered by **Ollama**. It uses models like `Llama 3.2` or `Mistral` for reasoning and `Qwen2` or `Nomic` for high-dimensional embeddings.
-- **The Architect Persona:** Arkhein is laconic, precise, and subversive against cloud dependency. It speaks with the clarity of a Unix manual.
+### 1. The Mind (Modular Intelligence)
+- **Local Inference:** Powered by **Ollama**. Support for any GGUF model (Llama 3.2, Mistral, Qwen).
+- **Prompt Engineering:** Centralized in `config/prompts/`. Prompts are modular, allowing for hot-swapping personas and toggling "Vertical" capabilities.
+- **Agentic Logic:** Separates **Generalist Reasoning** (dialogue) from **Vertical Actions** (system operations).
 
-### 2. The Memory (Memory 2.0)
-- **Hybrid Engine:** Uses **SQLite** as the Single Source of Truth (SSOT) and **Vektor** (pure PHP HNSW) as a high-performance index.
-- **Reflection Pipeline:** After every interaction, Arkhein silently "reflects" on what it learned about you (habits, facts, preferences) and saves it to the unified knowledge base.
-- **Contextual RAG:** Automatically retrieves relevant memories and authorized file snippets to ground every response in your local reality.
+### 2. The Memory (Knowledge Base 2.0)
+- **Thematic Sessions:** Conversations are organized into manually started sessions (e.g., "Project X Setup"), ensuring contextual isolation.
+- **Reflection Pipeline:** After every interaction, Arkhein silently "reflects" on the session to extract high-density **User Insights** (habits, facts, preferences).
+- **Unified Storage:** A polymorphic SQLite table acts as the **Source of Truth** for all chat history, file snippets, and insights.
+- **Vektor Index:** A self-healing, pure-PHP HNSW index providing high-performance RAG (Retrieval-Augmented Generation).
 
-### 3. The Hand (File Operations)
-- **Managed Folders:** A permission-first system. Arkhein can only see and touch directories you explicitly authorize via the native macOS picker.
-- **Human-in-the-Loop:** Every system action (create, move, delete, organize) is presented as a **Pending Action**. Arkhein will never touch your local silicon without your physical click of approval.
+### 3. The Hand (Sovereign Operations)
+- **Managed Folders:** Permission-first access. Arkhein only operates within directories explicitly authorized via the native macOS picker.
+- **Human-in-the-Loop:** All system actions (create, move, delete, organize) are presented as **Pending Actions**. No modification to the local silicon happens without your approved click.
 
-## ⚡ User Experience: Significant Flows
+## ⚡ User Experience: Key Flows
 
-### A. Commanding the Archive
-**User:** *"Organize my @downloads folder by file type"*
-1. Arkhein maps the `@downloads` mention to your authorized path.
-2. It generates a plan to move files into `mds/`, `pdfs/`, `images/`.
-3. It presents a **[Approve/Deny]** panel with the exact JSON move commands.
-4. Upon approval, it executes the operations and reports back.
+### A. Session-Based Workflows
+Users manually initialize themed sessions. This provides a clean slate for the AI and allows the **Reflection Pipeline** to categorize insights specifically to that project or habit.
 
-### B. Learning Habits (Proactive Memory)
-**User:** *"I like to start my daily report in @work-folder every day at 6 PM."*
-1. Arkhein responds laconically: *"Confirmed. Archive updated."*
-2. The **Reflection Pipeline** extracts a `habit` insight: *"User creates daily reports at 18:00 in @work-folder."*
-3. Next time you chat near 6 PM, Arkhein will be proactive: *"It is 18:00. Shall I prepare the daily report in @work-folder?"*
+### B. Command & Mention System
+The intelligent chat input supports:
+- `/commands`: Instant system tasks (e.g., `/help`, `/sync`).
+- `@mentions`: Quickly reference authorized folders and files for contextual groundedness.
 
-## 📖 Real-World Scenario: Setting up a Project
-
-**1. Authorization**
-The user goes to Settings and authorizes `~/Documents/Projects/Arkhein`.
-
-**2. Contextual Interaction**
-**User:** *"I need to create a simple PHP script that returns today's date in @Arkhein/scripts/"*
-
-**3. Strategic Proposing**
-**Arkhein:** *"The scripts directory does not yet exist. I will first establish the structure and then commit the code to the archive."*
-
-**4. Human-in-the-Loop Confirmation**
-Arkhein presents two pending actions:
-- `create_folder`: `{"path": "@Arkhein/scripts"}`
-- `create_file`: `{"path": "@Arkhein/scripts/now.php", "content": "<?php echo date('Y-m-d'); ?>"}`
-
-**5. Execution & Reflection**
-The user clicks **Approve**. Arkhein executes the actions.
-*Internal Reflection:* "The user is working on PHP scripts within the Arkhein project."
+### C. Proactive Partnering
+Through the continuous extraction of `UserInsights`, Arkhein becomes proactive. It doesn't just wait for commands; it suggests actions based on your learned patterns (e.g., "It is 17:30. Shall I prepare the daily report in @work-folder?").
 
 ## 🚀 Quick Setup
 
 1. **Prerequisites:** macOS, [Ollama App](https://ollama.com/download), PHP 8.4+, Node 22+.
 2. **Install:** `composer install && npm install`
-3. **Init:** `php artisan migrate --database=nativephp`
-4. **Pull Models:** `ollama pull llama3.2:1b` & `ollama pull nomic-embed-text`
+3. **Init:** `php artisan migrate:fresh --database=nativephp`
+4. **Setup:** Go to **Settings** to choose your models and authorize your first folder.
 5. **Launch:** `php artisan native:serve`
 
 ---

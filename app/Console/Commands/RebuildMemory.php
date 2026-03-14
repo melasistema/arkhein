@@ -13,10 +13,15 @@ class RebuildMemory extends Command
 
     public function handle(MemoryService $memory)
     {
-        $dimensions = (int) Setting::get('embedding_dimensions', 768);
+        // Use find() specifically to get the model on the right connection
+        $dimSetting = \App\Models\Setting::on('nativephp')->find('embedding_dimensions');
+        $modelSetting = \App\Models\Setting::on('nativephp')->find('embedding_model');
+
+        $dimensions = (int) ($dimSetting?->value ?? 768);
+        $model = $modelSetting?->value ?? 'default';
         
-        $this->info("Starting memory rebuild using SSOT (SQLite)...");
-        $this->warn("Model: " . Setting::get('embedding_model', 'default'));
+        $this->info("Starting memory rebuild using SSOT (nativephp.sqlite)...");
+        $this->warn("Model: $model");
         $this->warn("Dimensions: $dimensions");
 
         if ($memory->rebuildIndex($dimensions)) {

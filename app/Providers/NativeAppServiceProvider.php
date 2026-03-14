@@ -16,6 +16,14 @@ class NativeAppServiceProvider implements ProvidesPhpIni
         Window::open()
             ->title('Arkhein Assistant')
             ->maximized();
+
+        // Proactive Memory Integrity Check
+        try {
+            $dim = (int) \App\Models\Setting::on('nativephp')->find('embedding_dimensions')?->value ?? 768;
+            app(\App\Services\MemoryService::class)->ensureIndex($dim);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Arkhein: Boot-time indexing failed: " . $e->getMessage());
+        }
     }
 
     /**
