@@ -17,6 +17,14 @@ class IntentService
      */
     public function classify(string $input): string
     {
+        // FAST-PATH: Static check for obvious file system keywords
+        $normalizedInput = strtolower($input);
+        if (str_contains($normalizedInput, '@') || 
+            preg_match('/\b(create|move|delete|organize|folder|file|archive|sync)\b/', $normalizedInput)) {
+            Log::info("Arkhein: Intent (Fast-Path): FILE_SYSTEM");
+            return 'FILE_SYSTEM';
+        }
+
         $model = Setting::get('llm_model', config('services.ollama.model'));
         
         // Minimalist classification prompt

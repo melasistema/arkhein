@@ -74,10 +74,26 @@ class MemoryService
         
         $indexer = new Indexer();
         
-        Knowledge::on('nativephp')->chunk(100, function ($items) use ($indexer) {
+        Knowledge::on('nativephp')->chunk(100, function ($items) use ($indexer, $dimensions) {
             foreach ($items as $item) {
                 try {
-                    $indexer->insert($item->id, $item->embedding);
+                    $embedding = $item->embedding;
+                    if (is_string($embedding)) {
+                        $embedding = json_decode($embedding, true);
+                    }
+
+                    if (!is_array($embedding)) {
+                        Log::warning("Arkhein: Skipping knowledge item {$item->id} because embedding is not an array.");
+                        continue;
+                    }
+
+                    $itemDimensions = count($embedding);
+                    if ($itemDimensions !== $dimensions) {
+                        Log::warning("Arkhein: Skipping knowledge item {$item->id} due to dimension mismatch (Got: $itemDimensions, Expected: $dimensions).");
+                        continue;
+                    }
+
+                    $indexer->insert($item->id, $embedding);
                 } catch (\Exception $e) {
                     Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
                 }

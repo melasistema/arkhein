@@ -33,11 +33,20 @@ class FileOperationService
     protected function isAuthorized(string $path): bool
     {
         $resolvedPath = $this->resolvePath($path);
-        $realPath = realpath($resolvedPath) ?: $resolvedPath;
+        
+        // Normalize: use realpath if it exists, otherwise use the raw resolved path
+        $checkPath = realpath($resolvedPath) ?: $resolvedPath;
+        $checkPath = rtrim($checkPath, DIRECTORY_SEPARATOR);
+        
         $authorizedFolders = ManagedFolder::all();
 
         foreach ($authorizedFolders as $folder) {
-            if (str_starts_with($realPath, $folder->path)) {
+            $authorizedRoot = realpath($folder->path) ?: $folder->path;
+            $authorizedRoot = rtrim($authorizedRoot, DIRECTORY_SEPARATOR);
+            
+            // Success if exact match OR if checkPath is a subpath (starts with root + slash)
+            if ($checkPath === $authorizedRoot || 
+                str_starts_with($checkPath, $authorizedRoot . DIRECTORY_SEPARATOR)) {
                 return true;
             }
         }
@@ -198,6 +207,18 @@ class FileOperationService
         }
     }
 
+    public function getRegistrySummary(): string
+    {
+        $folders = ManagedFolder::all();
+        if ($folders->isEmpty()) return "No authorized folders.";
+
+        $summary = "AUTHORIZED ROOT FOLDERS:\n";
+        foreach ($folders as $folder) {
+            $summary .= "- @{$folder->name} -> {$folder->path}\n";
+        }
+        return $summary;
+    }
+
     public function listAuthorizedFiles(): array
     {
         $folders = ManagedFolder::all();
@@ -222,30 +243,37 @@ class FileOperationService
 
     protected function scanDirectory(string $fullPath, string $mentionPath, array &$fileList, array $ignore, int $depth): void
     {
-        if ($depth > 2 || count($fileList) > 500) return;
+        // Limit depth and total items to prevent context explosion and timeout
+        if ($depth > 2 || count($fileList) > 200) return;
 
-        $items = File::directories($fullPath);
-        foreach ($items as $dir) {
-            $name = basename($dir);
-            if (in_array($name, $ignore)) continue;
+        try {
+            $items = File::directories($fullPath);
+            foreach ($items as $dir) {
+                $name = basename($dir);
+                if (in_array($name, $ignore)) continue;
 
-            $newMention = $mentionPath . '/' . $name;
-            $fileList[] = [
-                'name' => $newMention,
-                'path' => $dir,
-                'type' => 'directory'
-            ];
-            
-            $this->scanDirectory($dir, $newMention, $fileList, $ignore, $depth + 1);
-        }
+                $newMention = $mentionPath . '/' . $name;
+                $fileList[] = [
+                    'name' => $newMention,
+                    'path' => $dir,
+                    'type' => 'directory'
+                ];
+                
+                $this->scanDirectory($dir, $newMention, $fileList, $ignore, $depth + 1);
+            }
 
-        $files = File::files($fullPath);
-        foreach ($files as $file) {
-            $fileList[] = [
-                'name' => $mentionPath . '/' . $file->getFilename(),
-                'path' => $file->getRealPath(),
-                'type' => 'file'
-            ];
+            $files = File::files($fullPath);
+            foreach ($files as $file) {
+                if (count($fileList) > 200) break;
+
+                $fileList[] = [
+                    'name' => $mentionPath . '/' . $file->getFilename(),
+                    'path' => $file->getRealPath(),
+                    'type' => 'file'
+                ];
+            }
+        } catch (\Exception $e) {
+            Log::error("Failed to scan directory $fullPath: " . $e->getMessage());
         }
     }
 }

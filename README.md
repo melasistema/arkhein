@@ -1,51 +1,43 @@
 # Arkhein - The Architect of the Shell
 
-> **Status:** Pre-Alpha / Strategic Architecture Pivot Complete
+> **Status:** Pre-Alpha / Core Sovereign Architecture Complete
 
-Arkhein is a sovereign, private-first macOS agent. It transforms your local computer into an active partner that understands your habits, commands your file system, and maintains a permanent, local digital memory—without a single byte ever leaving your machine.
+Arkhein is a private-first macOS agent designed to be your strategic partner. It lives entirely on your silicon, maintains an evolutionary digital memory, and commands your file system with precision—all while ensuring no data ever crosses the hardware boundary.
 
-## 🗺️ System Map: Core Architecture
+## 🗺️ System Map
 
-Arkhein adheres to a **Deep Module Philosophy**: exposing a simple conversational shell while encapsulating heavy AI logic behind modular services.
+### 🧠 The Mind (Intelligence & Persona)
+- **Local Sovereignty:** Powered by **Ollama**, Arkhein performs all inference locally using state-of-the-art GGUF models.
+- **The Architect Persona:** Laconic, precise, and strategic. Arkhein views the OS as a living structure to be optimized and indexed.
+- **Deep Modules:** All intelligence is encapsulated in specialized services, with modular prompts stored in `config/prompts/`.
 
-### 1. The Mind (Modular Intelligence)
-- **Local Inference:** Powered by **Ollama**. Support for any GGUF model (Llama 3.2, Mistral, Qwen).
-- **Prompt Engineering:** Centralized in `config/prompts/`. Prompts are modular, allowing for hot-swapping personas and toggling "Vertical" capabilities.
-- **Agentic Logic:** Separates **Generalist Reasoning** (dialogue) from **Vertical Actions** (system operations).
+### 🧠 The Memory (Evolutionary Architecture)
+- **Hybrid Storage:** SQLite serves as the **Single Source of Truth (SSOT)** for all text and embeddings, while **Vektor** (pure PHP HNSW) provides a high-performance index.
+- **Reflection Pipeline:** Arkhein automatically extracts habits, facts, and patterns from your conversations.
+- **Reconciliation Loop:** Your habits aren't static. Arkhein identifies conflicts (e.g., a meeting time change) and automatically reconciles its memory to stay aligned with your current life.
 
-### 2. The Memory (Evolutionary Memory)
-- **Hybrid Engine:** Uses **SQLite** as the SSOT and **Vektor** (pure PHP HNSW) as a high-performance index.
-- **Adaptive Learning:** After interactions, Arkhein "reflects" to extract habits and facts.
-- **Reconciliation Loop:** If your habits change (e.g., a meeting moves from 11:00 to 14:00), Arkhein automatically identifies the conflict and updates its long-term memory.
+### ✋ The Hand (Safe Operations)
+- **Permission-First:** Arkhein only operates within **Managed Folders** that you explicitly authorize.
+- **Human-in-the-Loop:** Every system action (create, move, delete, organize) is presented as a **Pending Action**. Arkhein will never modify your system without your physical click of approval.
 
-### 3. The Awareness (Proactive Heartbeat)
-- **Pulse System:** Every 60 seconds, Arkhein's internal heartbeat checks your stored habits against the current system state.
-- **Native Notifications:** When a pattern matches (e.g., "Daily Report at 17:30"), Arkhein dispatches a native macOS notification to partner with you proactively.
+## ⚡ Key Workflows
 
-### 4. The Hand (Sovereign Operations)
-- **Managed Folders:** Permission-first access. Arkhein only operates within directories explicitly authorized via the native macOS picker.
-- **Human-in-the-Loop:** All system actions (create, move, delete, organize) are presented as **Pending Actions**. No modification to the local silicon happens without your approved click.
+### 📁 Unified Archive Management
+Index your local project folders. Arkhein resolves `@mentions` to absolute paths and uses RAG to answer questions about your files with deep contextual awareness.
 
-## ⚡ User Experience: Key Flows
+### 🔔 Proactive Awareness
+Arkhein doesn't just wait for you. Every 60 seconds, its **Proactive Heartbeat** checks your learned habits against the clock. When it's time for your "Daily Report" or "Focus Mode," Arkhein dispatches a native macOS notification to partner with you.
 
-### A. Session-Based Workflows
-Users manually initialize themed sessions. This provides a clean slate for the AI and allows the **Reflection Pipeline** to categorize insights specifically to that project or habit.
-
-### B. Command & Mention System
-The intelligent chat input supports:
-- `/commands`: Instant system tasks (e.g., `/help`, `/sync`).
-- `@mentions`: Quickly reference authorized folders and files for contextual groundedness.
-
-### C. Proactive Partnering
-Through the continuous extraction of `UserInsights`, Arkhein becomes proactive. It doesn't just wait for commands; it suggests actions based on your learned patterns (e.g., "It is 17:30. Shall I prepare the daily report in @work-folder?").
+### 🐚 The Intelligent Shell
+A Copilot-like chat input supporting `/commands` for system tasks and `@mentions` for context, optimized for zero-lag performance in the Electron environment.
 
 ## 🚀 Quick Setup
 
-1. **Prerequisites:** macOS, [Ollama App](https://ollama.com/download), PHP 8.4+, Node 22+.
+1. **Environment:** macOS, [Ollama App](https://ollama.com/download), PHP 8.4+, Node 22+.
 2. **Install:** `composer install && npm install`
-3. **Init:** `php artisan migrate:fresh --database=nativephp`
-4. **Setup:** Go to **Settings** to choose your models and authorize your first folder.
+3. **Initialize:** `php artisan migrate:fresh --database=nativephp`
+4. **Configure:** Launch the app, go to **Settings** to choose your models and authorize your first folder.
 5. **Launch:** `php artisan native:serve`
 
 ---
-*Built with NativePHP, Laravel 12, and Vektor.*
+*Arkhein: Command your Silicon. Own your Memory.*

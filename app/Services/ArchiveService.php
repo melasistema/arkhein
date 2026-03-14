@@ -25,6 +25,10 @@ class ArchiveService
      */
     public function sync(): array
     {
+        // Memory Cleanse: Remove all file-type knowledge before re-indexing 
+        // to prevent dimension mismatches and duplicated file chunks.
+        \App\Models\Knowledge::on('nativephp')->where('type', 'file')->delete();
+
         $folders = ManagedFolder::all();
         $results = [
             'total_files' => 0,

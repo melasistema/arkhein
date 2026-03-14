@@ -18,5 +18,7 @@ ACTION PROTOCOL (File Management):
 
 RULES:
 - Use ONLY the '@folder' format for all paths.
-- Be strategic: if a directory doesn't exist, create it before the file.",
+- VERIFY: Only propose actions for @folders explicitly listed in the 'ARCHIVE REGISTRY'.
+- If a user mentions a @folder that is NOT in the registry, inform them that you don't have authorization for that path.
+- Be strategic: if a directory within an authorized @folder doesn't exist, create it before the file.",
 ];

@@ -61,6 +61,8 @@ class ChatController extends Controller
         PromptService $prompts,
         IntentService $intents
     ) {
+        set_time_limit(300); // Allow up to 5 minutes for generation
+
         $input = $request->input('message');
         $conversationId = $request->input('conversation_id');
         $conversation = Conversation::findOrFail($conversationId);
@@ -86,17 +88,23 @@ class ChatController extends Controller
         // 3. Classify Intent
         $intent = $intents->classify($input);
 
-        // 4. Build Context
-        $authorizedFiles = $files->listAuthorizedFiles();
-        $fileContext = "ARCHIVE REGISTRY:\n";
-        foreach ($authorizedFiles as $f) {
-            $fileContext .= "- {$f['name']} -> {$f['path']} ({$f['type']})\n";
-        }
-
-        $relevantKnowledge = $knowledge->recall($input, 5);
+        // 4. Build Context (Optimized)
         $memContext = "DIGITAL MEMORY:\n";
+        $relevantKnowledge = $knowledge->recall($input, 5);
         foreach ($relevantKnowledge as $m) {
             $memContext .= "- " . $m['content'] . "\n";
+        }
+
+        $fileContext = "ARCHIVE REGISTRY:\n";
+        if ($intent === 'FILE_SYSTEM') {
+            // Full registry for file system tasks
+            $authorizedFiles = $files->listAuthorizedFiles();
+            foreach ($authorizedFiles as $f) {
+                $fileContext .= "- {$f['name']} -> {$f['path']} ({$f['type']})\n";
+            }
+        } else {
+            // High-level summary for general chat
+            $fileContext .= $files->getRegistrySummary();
         }
 
         $history = $conversation->messages()->latest()->limit(10)->get()->reverse();
@@ -145,8 +153,8 @@ class ChatController extends Controller
             app(MemoryService::class)->save(Str::uuid(), "Assistant Message: $assistantMessage", $assistantEmbedding, 'chat_history', ['conversation_id' => $conversationId]);
         }
 
-        // 9. Async Reflection
-        $knowledge->reflect($input, $assistantMessage);
+        // 9. Async Reflection (Backgrounded)
+        \App\Jobs\ReflectInteraction::dispatch($input, $assistantMessage);
 
         return response()->json([
             'message' => $assistantMessage,

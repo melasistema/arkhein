@@ -35,7 +35,7 @@ class OllamaService
             $payload['options'] = $options['options'];
         }
 
-        $response = Http::post("{$this->host}/api/generate", $payload);
+        $response = Http::timeout(300)->post("{$this->host}/api/generate", $payload);
 
         if ($response->failed()) {
             Log::error("Ollama generate failed: " . $response->body());
@@ -50,7 +50,7 @@ class OllamaService
      */
     public function embeddings(string $model, string $prompt)
     {
-        $response = Http::post("{$this->host}/api/embeddings", [
+        $response = Http::timeout(60)->post("{$this->host}/api/embeddings", [
             'model' => $model,
             'prompt' => $prompt,
         ]);
