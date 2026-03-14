@@ -13,13 +13,16 @@ Arkhein adheres to a **Deep Module Philosophy**: exposing a simple conversationa
 - **Prompt Engineering:** Centralized in `config/prompts/`. Prompts are modular, allowing for hot-swapping personas and toggling "Vertical" capabilities.
 - **Agentic Logic:** Separates **Generalist Reasoning** (dialogue) from **Vertical Actions** (system operations).
 
-### 2. The Memory (Knowledge Base 2.0)
-- **Thematic Sessions:** Conversations are organized into manually started sessions (e.g., "Project X Setup"), ensuring contextual isolation.
-- **Reflection Pipeline:** After every interaction, Arkhein silently "reflects" on the session to extract high-density **User Insights** (habits, facts, preferences).
-- **Unified Storage:** A polymorphic SQLite table acts as the **Source of Truth** for all chat history, file snippets, and insights.
-- **Vektor Index:** A self-healing, pure-PHP HNSW index providing high-performance RAG (Retrieval-Augmented Generation).
+### 2. The Memory (Evolutionary Memory)
+- **Hybrid Engine:** Uses **SQLite** as the SSOT and **Vektor** (pure PHP HNSW) as a high-performance index.
+- **Adaptive Learning:** After interactions, Arkhein "reflects" to extract habits and facts.
+- **Reconciliation Loop:** If your habits change (e.g., a meeting moves from 11:00 to 14:00), Arkhein automatically identifies the conflict and updates its long-term memory.
 
-### 3. The Hand (Sovereign Operations)
+### 3. The Awareness (Proactive Heartbeat)
+- **Pulse System:** Every 60 seconds, Arkhein's internal heartbeat checks your stored habits against the current system state.
+- **Native Notifications:** When a pattern matches (e.g., "Daily Report at 17:30"), Arkhein dispatches a native macOS notification to partner with you proactively.
+
+### 4. The Hand (Sovereign Operations)
 - **Managed Folders:** Permission-first access. Arkhein only operates within directories explicitly authorized via the native macOS picker.
 - **Human-in-the-Loop:** All system actions (create, move, delete, organize) are presented as **Pending Actions**. No modification to the local silicon happens without your approved click.
 

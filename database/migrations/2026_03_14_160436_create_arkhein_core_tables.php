@@ -57,10 +57,23 @@ return new class extends Migration
 
             $table->foreign('conversation_id')->references('id')->on('conversations')->onDelete('cascade');
         });
+        // 6. User Insights (Distilled Habits & Patterns)
+        Schema::create('user_insights', function (Blueprint $table) {
+            $table->id();
+            $table->string('type'); // fact, habit, pattern, personality
+            $table->text('content');
+            $table->json('embedding')->nullable();
+            $table->json('metadata')->nullable();
+            $table->integer('importance')->default(1);
+            $table->integer('occurrence_count')->default(1);
+            $table->timestamp('last_observed_at')->nullable();
+            $table->timestamps();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('user_insights');
         Schema::dropIfExists('messages');
         Schema::dropIfExists('conversations');
         Schema::dropIfExists('knowledge');
