@@ -6,11 +6,17 @@ use Laravel\Fortify\Features;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\OllamaStatusController;
 use App\Http\Controllers\SettingsController;
+use App\Http\Controllers\VerticalController;
+use Inertia\Inertia;
 
 Route::get('/', [ChatController::class, 'index'])->name('chat');
 
 Route::middleware([])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::get('/dashboard', function () {
+        return Inertia::render('Dashboard', [
+            'verticals' => \App\Models\Vertical::with('folder')->get()
+        ]);
+    })->name('dashboard');
     Route::get('/chat/suggestions', [ChatController::class, 'suggestions'])->name('chat.suggestions');
     Route::post('/chat/start', [ChatController::class, 'start'])->name('chat.start');
     Route::get('/chat/history/{conversation}', [ChatController::class, 'history'])->name('chat.history');
@@ -18,6 +24,14 @@ Route::middleware([])->group(function () {
     Route::post('/chat/action/execute', [ChatController::class, 'executePendingAction'])->name('chat.action.execute');
     Route::get('/ollama/status', [OllamaStatusController::class, 'check'])->name('ollama.status');
     
+    // Verticals (Specialized AI Cards)
+    Route::get('/verticals', [VerticalController::class, 'index'])->name('verticals.index');
+    Route::post('/verticals', [VerticalController::class, 'store'])->name('verticals.store');
+    Route::patch('/verticals/{vertical}', [VerticalController::class, 'update'])->name('verticals.update');
+    Route::delete('/verticals/{vertical}', [VerticalController::class, 'destroy'])->name('verticals.destroy');
+    Route::post('/verticals/{vertical}/sync', [VerticalController::class, 'sync'])->name('verticals.sync');
+    Route::post('/verticals/{vertical}/query', [VerticalController::class, 'query'])->name('verticals.query');
+
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::post('/settings/sync', [SettingsController::class, 'sync'])->name('settings.sync');

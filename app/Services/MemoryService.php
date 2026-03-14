@@ -26,19 +26,19 @@ class MemoryService
 
     /**
      * Ensure the index is ready and matched to dimensions.
-     * Rebuilds from Knowledge table (SSOT) if missing.
      */
     public function ensureIndex(int $dimensions = 768)
     {
         Config::setDimensions($dimensions);
 
-        // Vektor uses internal paths based on DataDir. 
-        // We ensure we check the absolute path.
         $vectorFile = $this->storagePath . DIRECTORY_SEPARATOR . 'vector.bin';
         
-        if (!File::exists($vectorFile)) {
-            Log::info("Arkhein: Binary index missing at {$vectorFile}. Triggering auto-rebuild.");
-            return $this->rebuildIndex($dimensions);
+        if (!File::exists($vectorFile) || filesize($vectorFile) === 0) {
+            // Check if we have data in SQLite to rebuild from
+            if (Knowledge::on('nativephp')->count() > 0) {
+                Log::info("Arkhein: Binary index missing or empty but SQLite has data. Rebuilding...");
+                return $this->rebuildIndex($dimensions);
+            }
         }
 
         if ($this->isMismatched($vectorFile, $dimensions)) {
@@ -71,6 +71,7 @@ class MemoryService
         
         $this->clearBinaryFiles();
         Config::setDimensions($dimensions);
+        Config::setDataDir($this->storagePath);
         
         $indexer = new Indexer();
         
@@ -82,16 +83,10 @@ class MemoryService
                         $embedding = json_decode($embedding, true);
                     }
 
-                    if (!is_array($embedding)) {
-                        Log::warning("Arkhein: Skipping knowledge item {$item->id} because embedding is not an array.");
-                        continue;
-                    }
+                    if (!is_array($embedding)) continue;
 
                     $itemDimensions = count($embedding);
-                    if ($itemDimensions !== $dimensions) {
-                        Log::warning("Arkhein: Skipping knowledge item {$item->id} due to dimension mismatch (Got: $itemDimensions, Expected: $dimensions).");
-                        continue;
-                    }
+                    if ($itemDimensions !== $dimensions) continue;
 
                     $indexer->insert($item->id, $embedding);
                 } catch (\Exception $e) {
@@ -108,17 +103,9 @@ class MemoryService
      */
     public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [])
     {
-        Log::debug("Arkhein: Attempting to save knowledge item", [
-            'id' => $id,
-            'type' => $type,
-            'dimensions' => count($embedding),
-            'storage_path' => $this->storagePath
-        ]);
-
         try {
             $this->ensureIndex(count($embedding));
             
-            // 1. Save to SQLite Knowledge Base (SSOT)
             $dbResult = Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
@@ -128,12 +115,9 @@ class MemoryService
                     'metadata' => $metadata
                 ]
             );
-            Log::debug("Arkhein: SQLite save complete", ['success' => (bool)$dbResult]);
 
-            // 2. Save to Vektor Index
             $indexer = new Indexer();
             $indexer->insert($id, $embedding);
-            Log::debug("Arkhein: Vektor Index insertion complete.");
             
             return true;
         } catch (\Exception $e) {
@@ -147,13 +131,21 @@ class MemoryService
      */
     public function search(array $vector, int $limit = 5, ?float $threshold = null)
     {
-        $threshold = $threshold ?? config('knowledge.recall_threshold', 0.75);
+        $threshold = $threshold ?? config('knowledge.recall_threshold', 0.65);
 
         try {
             $this->ensureIndex(count($vector));
             $searcher = new Searcher();
             
             $results = $searcher->search($vector, $limit);
+
+            // If we have data in DB but 0 results from Vektor, something is wrong with the index
+            if (empty($results) && Knowledge::on('nativephp')->count() > 0) {
+                Log::warning("Arkhein: Search returned 0 hits but DB is not empty. Possible index corruption. Rebuilding...");
+                $this->rebuildIndex(count($vector));
+                // Retry search once
+                $results = $searcher->search($vector, $limit);
+            }
 
             return $this->parseResults($results, $threshold);
         } catch (\Exception $e) {
@@ -177,10 +169,10 @@ class MemoryService
     protected function clearBinaryFiles()
     {
         $files = [
-            Config::getVectorFile(),
-            Config::getGraphFile(),
-            Config::getMetaFile(),
-            Config::getLockFile(),
+            $this->storagePath . '/vector.bin',
+            $this->storagePath . '/graph.bin',
+            $this->storagePath . '/meta.bin',
+            $this->storagePath . '/vektor.lock',
         ];
 
         foreach ($files as $file) {
@@ -196,7 +188,6 @@ class MemoryService
 
         foreach ($results as $result) {
             $id = $result['id'];
-            
             $distance = $result['score'] ?? 1.0;
             $similarity = 1.0 - $distance;
 

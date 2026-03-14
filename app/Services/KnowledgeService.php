@@ -18,14 +18,47 @@ class KnowledgeService
     /**
      * Search the Knowledge Base with a similarity threshold.
      */
-    public function recall(string $query, int $limit = 5): array
+    public function recall(string $query, int $limit = 5, ?int $folderId = null): array
     {
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
         $embedding = $this->ollama->embeddings($embeddingModel, $query);
 
-        if (!$embedding) return [];
+        if (!$embedding) {
+            Log::error("Arkhein RAG: Failed to generate embedding for query.");
+            return [];
+        }
 
-        return $this->memory->search($embedding, $limit);
+        // If a folderId is provided, we search with a MUCH higher limit and filter post-retrieval
+        // since the vector index is flat and global.
+        $searchLimit = $folderId ? $limit * 100 : $limit;
+        $results = $this->memory->search($embedding, $searchLimit);
+
+        Log::info("Arkhein RAG: Raw Memory Search Results", [
+            'raw_count' => count($results),
+            'top_score' => count($results) > 0 ? $results[0]['score'] : null,
+            'threshold_used' => config('knowledge.recall_threshold', 0.65)
+        ]);
+
+        if ($folderId) {
+            $filtered = collect($results)
+                ->filter(function ($item) use ($folderId) {
+                    $metadata = $item['metadata'] ?? [];
+                    $match = isset($metadata['folder_id']) && (int) $metadata['folder_id'] === $folderId;
+                    return $match;
+                })
+                ->take($limit)
+                ->values()
+                ->toArray();
+
+            Log::info("Arkhein RAG: Filtered Results", [
+                'folder_id' => $folderId,
+                'filtered_count' => count($filtered)
+            ]);
+
+            return $filtered;
+        }
+
+        return $results;
     }
 
     /**

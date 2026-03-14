@@ -61,7 +61,7 @@ class ChatController extends Controller
         PromptService $prompts,
         IntentService $intents
     ) {
-        set_time_limit(300); // Allow up to 5 minutes for generation
+        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
 
         $input = $request->input('message');
         $conversationId = $request->input('conversation_id');

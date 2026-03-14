@@ -14,9 +14,9 @@ use App\Services\ArchiveService;
 
 class SettingsController extends Controller
 {
-    public function index(OllamaService $ollama)
+    public function index(Request $request, OllamaService $ollama)
     {
-        return Inertia::render('Settings', [
+        $data = [
             'models' => $ollama->tags(),
             'folders' => ManagedFolder::all(),
             'current' => [
@@ -24,7 +24,13 @@ class SettingsController extends Controller
                 'embedding_model' => Setting::get('embedding_model', config('services.ollama.embedding_model')),
                 'embedding_dimensions' => (int) Setting::get('embedding_dimensions', 768),
             ]
-        ]);
+        ];
+
+        if ($request->wantsJson()) {
+            return response()->json($data);
+        }
+
+        return Inertia::render('Settings', $data);
     }
 
     public function sync(ArchiveService $archive)

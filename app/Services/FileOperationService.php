@@ -244,7 +244,10 @@ class FileOperationService
     protected function scanDirectory(string $fullPath, string $mentionPath, array &$fileList, array $ignore, int $depth): void
     {
         // Limit depth and total items to prevent context explosion and timeout
-        if ($depth > 2 || count($fileList) > 200) return;
+        $maxDepth = config('arkhein.boundaries.max_file_scan_depth', 2);
+        $maxItems = config('arkhein.boundaries.max_registry_items', 200);
+
+        if ($depth > $maxDepth || count($fileList) > $maxItems) return;
 
         try {
             $items = File::directories($fullPath);
@@ -264,7 +267,7 @@ class FileOperationService
 
             $files = File::files($fullPath);
             foreach ($files as $file) {
-                if (count($fileList) > 200) break;
+                if (count($fileList) > $maxItems) break;
 
                 $fileList[] = [
                     'name' => $mentionPath . '/' . $file->getFilename(),

@@ -21,7 +21,7 @@ class OllamaService
     {
         $payload = [
             'model' => $model,
-            'prompt' => $prompt,
+            'prompt' => $this->sanitize($prompt),
             'stream' => false,
         ];
 
@@ -35,7 +35,8 @@ class OllamaService
             $payload['options'] = $options['options'];
         }
 
-        $response = Http::timeout(300)->post("{$this->host}/api/generate", $payload);
+        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
 
         if ($response->failed()) {
             Log::error("Ollama generate failed: " . $response->body());
@@ -52,7 +53,7 @@ class OllamaService
     {
         $response = Http::timeout(60)->post("{$this->host}/api/embeddings", [
             'model' => $model,
-            'prompt' => $prompt,
+            'prompt' => $this->sanitize($prompt),
         ]);
 
         if ($response->failed()) {
@@ -75,5 +76,13 @@ class OllamaService
         }
 
         return $response->json('models');
+    }
+
+    /**
+     * Ensure the string is valid UTF-8 for JSON encoding.
+     */
+    protected function sanitize(string $text): string
+    {
+        return mb_convert_encoding($text, 'UTF-8', 'UTF-8');
     }
 }
