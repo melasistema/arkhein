@@ -16,6 +16,8 @@ Route::middleware([])->group(function () {
     
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
     Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/folders', [SettingsController::class, 'addFolder'])->name('settings.folders.add');
+    Route::delete('/settings/folders/{folder}', [SettingsController::class, 'removeFolder'])->name('settings.folders.remove');
 });
 
 // require __DIR__.'/settings.php';

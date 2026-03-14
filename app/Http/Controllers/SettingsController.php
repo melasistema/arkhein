@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Setting;
+use App\Models\ManagedFolder;
 use App\Services\OllamaService;
 use App\Services\MemoryService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
+use Native\Laravel\Dialog;
 
 class SettingsController extends Controller
 {
@@ -14,12 +16,37 @@ class SettingsController extends Controller
     {
         return Inertia::render('Settings', [
             'models' => $ollama->tags(),
+            'folders' => ManagedFolder::all(),
             'current' => [
                 'llm_model' => Setting::get('llm_model', config('services.ollama.model')),
                 'embedding_model' => Setting::get('embedding_model', config('services.ollama.embedding_model')),
                 'embedding_dimensions' => (int) Setting::get('embedding_dimensions', 768),
             ]
         ]);
+    }
+
+    public function addFolder()
+    {
+        $path = Dialog::new()
+            ->folders()
+            ->title('Authorize Folder for Arkhein')
+            ->button('Authorize')
+            ->open();
+
+        if ($path) {
+            ManagedFolder::updateOrCreate(
+                ['path' => $path],
+                ['name' => basename($path)]
+            );
+        }
+
+        return back();
+    }
+
+    public function removeFolder(ManagedFolder $folder)
+    {
+        $folder->delete();
+        return back();
     }
 
     public function update(Request $request, MemoryService $memory)
