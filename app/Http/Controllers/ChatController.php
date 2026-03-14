@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use App\Models\Setting;
+use App\Models\ManagedFolder;
 use App\Services\OllamaService;
 use App\Services\MemoryService;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Log;
 
 use App\Services\FileOperationService;
 
@@ -16,6 +18,26 @@ class ChatController extends Controller
     public function index()
     {
         return Inertia::render('Chat');
+    }
+
+    public function suggestions(FileOperationService $files)
+    {
+        $authorizedFiles = $files->listAuthorizedFiles();
+        $folders = ManagedFolder::all()->map(fn($f) => [
+            'type' => 'folder',
+            'name' => $f->name,
+            'path' => $f->path
+        ]);
+
+        $fileItems = collect($authorizedFiles)->map(fn($f) => [
+            'type' => 'file',
+            'name' => $f['name'],
+            'path' => $f['path']
+        ]);
+
+        return response()->json([
+            'items' => $folders->concat($fileItems)->values()
+        ]);
     }
 
     public function send(Request $request, OllamaService $ollama, MemoryService $memory, FileOperationService $files)
@@ -48,45 +70,48 @@ class ChatController extends Controller
 
         // 3. System Prompt with Action Capabilities
         $actionDefinition = "
-CRITICAL: You can execute actions by including a JSON block at the end of your response.
-Format: [ACTION:{\"type\":\"action_name\",\"params\":{}}]
-Available Actions:
-- create_file: {\"path\":\"full_path\", \"content\":\"text\"}
-- organize_folder: {\"path\":\"folder_path\"}
+ACTION PROTOCOL:
+You are an executor. When a file operation is required, you MUST append the action in this EXACT JSON format at the end of your response.
 
-Example: [ACTION:{\"type\":\"create_file\",\"params\":{\"path\":\"/Users/vix/docs/note.md\", \"content\":\"Hello\"}}]";
+Format: [ACTION:{\"type\":\"action_name\",\"params\":{}}]
+
+Available Actions:
+- create_file: {\"path\":\"absolute_path\", \"content\":\"text\"}
+- organize_folder: {\"path\":\"absolute_path\"}
+- move_files: {\"from\":\"source_path\", \"to\":\"destination_path\"}
+- delete_file: {\"path\":\"absolute_path\"}
+- delete_folder: {\"path\":\"absolute_path\"}
+- sync_archive: {}
+
+Example for creating a file:
+The scroll has been inscribed. [ACTION:{\"type\":\"create_file\",\"params\":{\"path\":\"/Users/vix/test.md\", \"content\":\"Inscribed content\"}}]
+
+RULES:
+1. Use ONLY the 'Available Authorized Files' paths.
+2. Do NOT use placeholders. Use absolute paths.
+3. If no action is needed, speak only in text.
+4. You can provide multiple actions if required, each in its own [ACTION:...] block.";
 
         $systemPrompt = config('ai.system_prompt') . "\n\n" . $fileContext . "\n\n" . $memContext . "\n\n" . $actionDefinition;
-        $systemPrompt = str_replace(
-            ['{name}', '{role}', '{intention}', '{personality}', '{ethics}'],
-            [
-                config('ai.name'),
-                config('ai.role'),
-                config('ai.intention'),
-                implode("\n- ", config('ai.personality')),
-                implode("\n- ", config('ai.ethics'))
-            ],
-            $systemPrompt
-        );
+        // ... (str_replace logic)
 
         // 4. Generate response
         $response = $ollama->generate($model, "System: $systemPrompt\n\nUser: $input\nAssistant:");
         $assistantMessage = $response['response'] ?? "I'm sorry, I couldn't generate a response.";
 
-        // 5. Parse and Execute Actions
-        $executedAction = null;
-        if (preg_match('/\[ACTION:(.*?)\]/', $assistantMessage, $matches)) {
-            $actionData = json_decode($matches[1], true);
-            if ($actionData) {
-                $executedAction = $this->executeAction($actionData, $files);
-                // Clean the message for the user
-                $assistantMessage = trim(preg_replace('/\[ACTION:.*?\]/', '', $assistantMessage));
-                if ($executedAction['success']) {
-                    $assistantMessage .= "\n\n[System: Action executed successfully]";
-                } else {
-                    $assistantMessage .= "\n\n[System Error: " . $executedAction['error'] . "]";
+        Log::debug("Arkhein Raw Response", ['response' => $assistantMessage]);
+
+        // 5. Parse Multiple Actions (Wait for User Confirmation)
+        $pendingActions = [];
+        if (preg_match_all('/\[ACTION:(.*?)\]/', $assistantMessage, $matches)) {
+            foreach ($matches[1] as $json) {
+                $actionData = json_decode($json, true);
+                if ($actionData) {
+                    $pendingActions[] = array_merge($actionData, ['status' => 'pending']);
                 }
             }
+            // Strip all action blocks from the visible message
+            $assistantMessage = trim(preg_replace('/\[ACTION:.*?\]/', '', $assistantMessage));
         }
 
         // 6. Save memory
@@ -95,20 +120,39 @@ Example: [ACTION:{\"type\":\"create_file\",\"params\":{\"path\":\"/Users/vix/doc
         return response()->json([
             'message' => $assistantMessage,
             'memories_used' => count($similarMemories),
-            'action' => $executedAction,
+            'pending_actions' => $pendingActions,
         ]);
     }
 
-    protected function executeAction(array $action, FileOperationService $files): array
+    public function executePendingAction(Request $request, FileOperationService $files, MemoryService $memory)
+    {
+        $action = $request->input('action');
+        $result = $this->executeAction($action, $files, $memory);
+
+        return response()->json($result);
+    }
+
+    protected function executeAction(array $action, FileOperationService $files, MemoryService $memory): array
     {
         $type = $action['type'] ?? '';
         $params = $action['params'] ?? [];
+
+        Log::debug("Arkhein Executing Action", ['type' => $type, 'params' => $params]);
 
         switch ($type) {
             case 'create_file':
                 return $files->createFile($params['path'] ?? '', $params['content'] ?? '');
             case 'organize_folder':
                 return $files->organizeFolder($params['path'] ?? '');
+            case 'move_files':
+                return $files->moveFiles($params['from'] ?? '', $params['to'] ?? '');
+            case 'delete_file':
+                return $files->deleteFile($params['path'] ?? '');
+            case 'delete_folder':
+                return $files->deleteFolder($params['path'] ?? '');
+            case 'sync_archive':
+                $results = app(\App\Services\ArchiveService::class)->sync();
+                return ['success' => true, 'data' => $results];
             default:
                 return ['success' => false, 'error' => 'Unknown action type.'];
         }

@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Native\Laravel\Dialog;
 
+use App\Services\ArchiveService;
+
 class SettingsController extends Controller
 {
     public function index(OllamaService $ollama)
@@ -23,6 +25,12 @@ class SettingsController extends Controller
                 'embedding_dimensions' => (int) Setting::get('embedding_dimensions', 768),
             ]
         ]);
+    }
+
+    public function sync(ArchiveService $archive)
+    {
+        $results = $archive->sync();
+        return back()->with('success', "Indexed {$results['total_files']} files and generated {$results['indexed_chunks']} chunks.");
     }
 
     public function addFolder()

@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck } from 'lucide-vue-next';
+import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw } from 'lucide-vue-next';
 import { settings } from '@/routes';
 
 const props = defineProps<{
@@ -27,6 +27,8 @@ const breadcrumbs = [
     },
 ];
 
+const syncing = ref(false);
+
 const form = useForm({
     llm_model: props.current.llm_model,
     embedding_model: props.current.embedding_model,
@@ -41,6 +43,14 @@ const isMemoryResetRequired = computed(() => {
 const submit = () => {
     form.post('/settings', {
         preserveScroll: true,
+    });
+};
+
+const syncFolders = () => {
+    syncing.value = true;
+    useForm({}).post('/settings/sync', {
+        preserveScroll: true,
+        onFinish: () => syncing.value = false,
     });
 };
 
@@ -182,10 +192,14 @@ const removeFolder = (id: number) => {
                         </div>
                     </div>
 
-                    <div class="pt-2">
-                        <Button variant="outline" class="w-full" @click="addFolder">
+                    <div class="pt-2 flex gap-2">
+                        <Button variant="outline" class="flex-1" @click="addFolder">
                             <FolderPlus class="mr-2 h-4 w-4" />
                             Authorize Folder
+                        </Button>
+                        <Button variant="secondary" :disabled="syncing || folders.length === 0" @click="syncFolders">
+                            <RefreshCw class="mr-2 h-4 w-4" :class="{ 'animate-spin': syncing }" />
+                            {{ syncing ? 'Indexing...' : 'Sync Archive' }}
                         </Button>
                     </div>
                 </CardContent>
