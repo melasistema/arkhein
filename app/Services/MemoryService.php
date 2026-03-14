@@ -2,86 +2,114 @@
 
 namespace App\Services;
 
+use App\Models\Knowledge;
 use Centamiv\Vektor\Core\Config;
 use Centamiv\Vektor\Services\Indexer;
 use Centamiv\Vektor\Services\Searcher;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
 
 class MemoryService
 {
     protected string $storagePath;
-    protected string $metadataPath;
 
     public function __construct()
     {
         $this->storagePath = storage_path('app/vektor');
-        $this->metadataPath = storage_path('app/vektor/metadata.json');
         
-        if (!file_exists($this->storagePath)) {
-            mkdir($this->storagePath, 0755, true);
+        if (!File::isDirectory($this->storagePath)) {
+            File::makeDirectory($this->storagePath, 0755, true);
         }
 
-        // Set the storage path for Vektor
         Config::setDataDir($this->storagePath);
     }
 
     /**
-     * Compatibility method for our previous implementation.
+     * Ensure the index is ready and matched to dimensions.
+     * Rebuilds from Knowledge table (SSOT) if missing.
      */
     public function ensureIndex(int $dimensions = 768)
     {
-        // 1. Set dimensions FIRST so Vektor knows the row size
         Config::setDimensions($dimensions);
 
-        // 2. Detect Dimension Mismatch
         $vectorFile = Config::getVectorFile();
-        if (file_exists($vectorFile) && filesize($vectorFile) > 0) {
-            clearstatcache(true, $vectorFile);
-            $expectedRowSize = Config::getVectorRowSize();
-            $actualSize = filesize($vectorFile);
-            
-            if ($actualSize % $expectedRowSize !== 0) {
-                Log::warning("Vektor dimension mismatch detected. Expected Row: $expectedRowSize, File Size: $actualSize. Resetting memory database.");
-                $this->reset();
-            }
+        
+        if (!File::exists($vectorFile) || $this->isMismatched($vectorFile, $dimensions)) {
+            return $this->rebuildIndex($dimensions);
         }
 
         return true;
     }
 
+    protected function isMismatched(string $path, int $dimensions): bool
+    {
+        if (filesize($path) === 0) return false;
+        clearstatcache(true, $path);
+        return (filesize($path) % Config::getVectorRowSize()) !== 0;
+    }
+
     /**
-     * Save a memory (document + embedding).
+     * Rebuild Vektor from Knowledge base.
      */
-    public function save(string $id, string $content, array $embedding, array $metadata = [])
+    public function rebuildIndex(int $dimensions): bool
+    {
+        Log::info("Arkhein: Rebuilding Vektor index from Knowledge Base SSOT.");
+        
+        $this->clearBinaryFiles();
+        Config::setDimensions($dimensions);
+        
+        $indexer = new Indexer();
+        
+        Knowledge::chunk(100, function ($items) use ($indexer) {
+            foreach ($items as $item) {
+                try {
+                    $indexer->insert($item->id, $item->embedding);
+                } catch (\Exception $e) {
+                    Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
+                }
+            }
+        });
+
+        return true;
+    }
+
+    /**
+     * Save any piece of knowledge.
+     */
+    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [])
     {
         try {
-            Config::setDimensions(count($embedding));
+            $this->ensureIndex(count($embedding));
+            
+            // 1. Save to SQLite Knowledge Base (SSOT)
+            Knowledge::updateOrCreate(
+                ['id' => $id],
+                [
+                    'type' => $type,
+                    'content' => $content,
+                    'embedding' => $embedding,
+                    'metadata' => $metadata
+                ]
+            );
+
+            // 2. Save to Vektor Index
             $indexer = new Indexer();
-            
-            // Insert into Vektor
             $indexer->insert($id, $embedding);
-            
-            // Save metadata locally in a JSON file
-            $this->saveMetadata($id, [
-                'content' => $content,
-                'metadata' => $metadata,
-                'timestamp' => time()
-            ]);
             
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to save memory to Vektor: " . $e->getMessage());
+            Log::error("Failed to save to Knowledge Index: " . $e->getMessage());
             return false;
         }
     }
 
     /**
-     * Search for similar memories.
+     * Search Knowledge Base using Vektor.
      */
     public function search(array $vector, int $limit = 5)
     {
         try {
-            Config::setDimensions(count($vector));
+            $this->ensureIndex(count($vector));
             $searcher = new Searcher();
             
             $results = $searcher->search($vector, $limit);
@@ -93,51 +121,27 @@ class MemoryService
         }
     }
 
-    /**
-     * Clear all memory (used when changing dimensions/models).
-     */
     public function reset()
     {
-        try {
-            $files = [
-                Config::getVectorFile(),
-                Config::getGraphFile(),
-                Config::getMetaFile(),
-                Config::getLockFile(),
-                $this->metadataPath
-            ];
+        $this->clearBinaryFiles();
+        Knowledge::truncate();
+        return true;
+    }
 
-            foreach ($files as $file) {
-                if (file_exists($file)) {
-                    unlink($file);
-                }
+    protected function clearBinaryFiles()
+    {
+        $files = [
+            Config::getVectorFile(),
+            Config::getGraphFile(),
+            Config::getMetaFile(),
+            Config::getLockFile(),
+        ];
+
+        foreach ($files as $file) {
+            if (File::exists($file)) {
+                File::delete($file);
             }
-            return true;
-        } catch (\Exception $e) {
-            Log::error("Failed to reset Vektor memory: " . $e->getMessage());
-            return false;
         }
-    }
-
-    protected function saveMetadata(string $id, array $data)
-    {
-        $allMetadata = [];
-        if (file_exists($this->metadataPath)) {
-            $allMetadata = json_decode(file_get_contents($this->metadataPath), true) ?: [];
-        }
-        
-        $allMetadata[$id] = $data;
-        file_put_contents($this->metadataPath, json_encode($allMetadata));
-    }
-
-    protected function getMetadata(string $id)
-    {
-        if (!file_exists($this->metadataPath)) {
-            return null;
-        }
-        
-        $allMetadata = json_decode(file_get_contents($this->metadataPath), true) ?: [];
-        return $allMetadata[$id] ?? null;
     }
 
     protected function parseResults($results)
@@ -146,14 +150,17 @@ class MemoryService
 
         foreach ($results as $result) {
             $id = $result['id'];
-            $meta = $this->getMetadata($id);
+            $item = Knowledge::find($id);
             
-            $parsed[] = [
-                'id' => $id,
-                'content' => $meta['content'] ?? '',
-                'score' => $result['score'] ?? 0,
-                'metadata' => $meta['metadata'] ?? []
-            ];
+            if ($item) {
+                $parsed[] = [
+                    'id' => $id,
+                    'type' => $item->type,
+                    'content' => $item->content,
+                    'score' => $result['score'] ?? 0,
+                    'metadata' => $item->metadata
+                ];
+            }
         }
 
         return $parsed;

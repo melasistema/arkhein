@@ -1,84 +1,68 @@
-# Arkhein - Private-First AI Assistant
+# Arkhein - The Architect of the Shell
 
-> **Status:** Concept / Pre-Alpha
+> **Status:** Pre-Alpha / Core Architecture Established
 
-Arkhein is a NativePHP desktop application for macOS that prioritizes privacy and local intelligence. It combines the power of local LLMs via **Ollama** with a high-performance, pure PHP vector store (**Vektor**) to create a conversational and active assistant that lives entirely on your machine.
+Arkhein is a sovereign, private-first macOS agent. It transforms your local computer into an active partner that understands your habits, commands your file system, and maintains a permanent, local digital memory—without a single byte ever leaving your machine.
 
-## Vision
+## 🗺️ System Map: How Arkhein Works
 
-Our goal is a "Private-First" experience. No cloud, no API keys, no data leakage. Arkhein is designed to be OS X-centric, integrating seamlessly with your workflow using natural language.
+Arkhein is built on a **Deep Module Philosophy**: exposing a simple conversational shell while encapsulating complex AI pipelines.
 
-### Key Features
+### 1. The Mind (Inference & Persona)
+- **Local Intelligence:** Powered by **Ollama**. It uses models like `Llama 3.2` or `Mistral` for reasoning and `Qwen2` or `Nomic` for high-dimensional embeddings.
+- **The Architect Persona:** Arkhein is laconic, precise, and subversive against cloud dependency. It speaks with the clarity of a Unix manual.
 
-*   **🔒 100% Private:** Your data and conversations never leave your computer.
-*   **🧠 Long-Term Memory:** Powered by **Vektor** (a native PHP HNSW vector database), Arkhein remembers context and past interactions locally.
-*   **⚡ Native macOS App:** Built with **NativePHP** (Laravel + Electron) for a fast, native desktop experience.
-*   **🤖 Local Inference:** Integrates with **Ollama**. Bring your own open-source models (Llama 3.2, Mistral, Gemma, etc.).
-*   **💬 Natural Language:** Interface with your system and data naturally.
+### 2. The Memory (Memory 2.0)
+- **Hybrid Engine:** Uses **SQLite** as the Single Source of Truth (SSOT) and **Vektor** (pure PHP HNSW) as a high-performance index.
+- **Reflection Pipeline:** After every interaction, Arkhein silently "reflects" on what it learned about you (habits, facts, preferences) and saves it to the unified knowledge base.
+- **Contextual RAG:** Automatically retrieves relevant memories and authorized file snippets to ground every response in your local reality.
 
-## Tech Stack
+### 3. The Hand (File Operations)
+- **Managed Folders:** A permission-first system. Arkhein can only see and touch directories you explicitly authorize via the native macOS picker.
+- **Human-in-the-Loop:** Every system action (create, move, delete, organize) is presented as a **Pending Action**. Arkhein will never touch your local silicon without your physical click of approval.
 
-*   **Framework:** [Laravel 12](https://laravel.com)
-*   **Desktop Shell:** [NativePHP](https://nativephp.com)
-*   **Vector Database:** [Vektor](https://centamiv.github.io/vektor/) (Pure PHP Binary Storage)
-*   **AI Engine:** [Ollama](https://ollama.com)
-*   **Frontend:** [Vue 3](https://vuejs.org) + [Inertia.js](https://inertiajs.com) + [Shadcn UI](https://www.shadcn-vue.com/)
+## ⚡ User Experience: Significant Flows
 
-## Getting Started
+### A. Commanding the Archive
+**User:** *"Organize my @downloads folder by file type"*
+1. Arkhein maps the `@downloads` mention to your authorized path.
+2. It generates a plan to move files into `mds/`, `pdfs/`, `images/`.
+3. It presents a **[Approve/Deny]** panel with the exact JSON move commands.
+4. Upon approval, it executes the operations and reports back.
 
-### Prerequisites
+### B. Learning Habits (Proactive Memory)
+**User:** *"I like to start my daily report in @work-folder every day at 6 PM."*
+1. Arkhein responds laconically: *"Confirmed. Archive updated."*
+2. The **Reflection Pipeline** extracts a `habit` insight: *"User creates daily reports at 18:00 in @work-folder."*
+3. Next time you chat near 6 PM, Arkhein will be proactive: *"It is 18:00. Shall I prepare the daily report in @work-folder?"*
 
-1.  **macOS:** Arkhein is optimized for Apple Silicon and Intel Macs.
-2.  **Ollama for macOS:** [Download and install](https://ollama.com/download) the native app.
-3.  **PHP 8.2+** & **Node 22+**
+## 📖 Real-World Scenario: Setting up a Project
 
-### Installation
+**1. Authorization**
+The user goes to Settings and authorizes `~/Documents/Projects/Arkhein`.
 
-1.  Clone and install:
-    ```bash
-    git clone https://github.com/yourusername/arkhein.git
-    cd arkhein
-    composer install
-    npm install
-    ```
+**2. Contextual Interaction**
+**User:** *"I need to create a simple PHP script that returns today's date in @Arkhein/scripts/"*
 
-2.  Initialize environment:
-    ```bash
-    cp .env.example .env
-    php artisan key:generate
-    touch database/database.sqlite
-    php artisan migrate
-    ```
+**3. Strategic Proposing**
+**Arkhein:** *"The scripts directory does not yet exist. I will first establish the structure and then commit the code to the archive."*
 
-3.  Prepare AI Models:
-    Make sure Ollama is running and pull the defaults:
-    ```bash
-    ollama pull llama3.2:1b
-    ollama pull nomic-embed-text
-    ```
+**4. Human-in-the-Loop Confirmation**
+Arkhein presents two pending actions:
+- `create_folder`: `{"path": "@Arkhein/scripts"}`
+- `create_file`: `{"path": "@Arkhein/scripts/now.php", "content": "<?php echo date('Y-m-d'); ?>"}`
 
-4.  Verify Infrastructure:
-    ```bash
-    php artisan test:ai
-    ```
+**5. Execution & Reflection**
+The user clicks **Approve**. Arkhein executes the actions.
+*Internal Reflection:* "The user is working on PHP scripts within the Arkhein project."
 
-### Running the App
+## 🚀 Quick Setup
 
-```bash
-# Launch the NativePHP dev environment
-php artisan native:serve
-```
+1. **Prerequisites:** macOS, [Ollama App](https://ollama.com/download), PHP 8.4+, Node 22+.
+2. **Install:** `composer install && npm install`
+3. **Init:** `php artisan migrate --database=nativephp`
+4. **Pull Models:** `ollama pull llama3.2:1b` & `ollama pull nomic-embed-text`
+5. **Launch:** `php artisan native:serve`
 
-## 🗺️ Roadmap
-
-- [x] **Core Setup:** Pure-PHP, zero-docker architecture.
-- [x] **Local AI:** Seamless Ollama integration.
-- [x] **Binary Memory:** Persistent Vektor-based long-term memory.
-- [x] **Reactive UI:** Modern Chat interface.
-- [ ] **Phase 2: File Indexing:** Index local project files for code-aware assistance.
-- [ ] **Phase 2: OS Integration:** Global hotkeys and system-level actions.
-- [ ] **Packaging:** One-click DMG installer for distribution.
-
-## License
-
-This project is licensed under the MIT license.
+---
+*Built with NativePHP, Laravel 12, and Vektor.*

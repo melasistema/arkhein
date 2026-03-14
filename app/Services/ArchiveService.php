@@ -98,14 +98,13 @@ class ArchiveService
             if ($embedding) {
                 $id = Str::uuid()->toString();
                 $metadata = [
-                    'type' => 'file_archive',
                     'path' => $path,
                     'filename' => basename($path),
                     'chunk_index' => $index,
                     'total_chunks' => count($chunks)
                 ];
 
-                $this->memory->save($id, $chunk, $embedding, $metadata);
+                $this->memory->save($id, $chunk, $embedding, 'file', $metadata);
                 $chunkCount++;
             }
         }

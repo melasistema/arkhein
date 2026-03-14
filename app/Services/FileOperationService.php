@@ -46,6 +46,26 @@ class FileOperationService
     }
 
     /**
+     * Create a new directory.
+     */
+    public function createFolder(string $path): array
+    {
+        $resolvedPath = $this->resolvePath($path);
+        if (!$this->isAuthorized($resolvedPath)) {
+            return ['success' => false, 'error' => 'Path not authorized.'];
+        }
+
+        try {
+            if (!File::isDirectory($resolvedPath)) {
+                File::makeDirectory($resolvedPath, 0755, true);
+            }
+            return ['success' => true, 'path' => $resolvedPath];
+        } catch (\Exception $e) {
+            return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    /**
      * Create a new file with content.
      */
     public function createFile(string $path, string $content): array
@@ -178,10 +198,6 @@ class FileOperationService
         }
     }
 
-    /**
-     * List files in authorized folders for LLM context.
-     * Non-recursive for performance.
-     */
     public function listAuthorizedFiles(): array
     {
         $folders = ManagedFolder::all();
@@ -189,21 +205,47 @@ class FileOperationService
         $ignore = ['.git', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
 
         foreach ($folders as $folder) {
-            if (File::isDirectory($folder->path)) {
-                // Only list top-level files for suggestions to keep it snappy
-                $files = File::files($folder->path);
-                foreach ($files as $file) {
-                    $fileList[] = [
-                        'name' => $file->getFilename(),
-                        'path' => $file->getRealPath(),
-                        'size' => $file->getSize(),
-                    ];
+            if (!File::isDirectory($folder->path)) continue;
 
-                    if (count($fileList) > 500) break 2;
-                }
-            }
+            $fileList[] = [
+                'name' => "@{$folder->name}",
+                'path' => $folder->path,
+                'type' => 'directory'
+            ];
+
+            // 2-Level deep scan for context
+            $this->scanDirectory($folder->path, "@{$folder->name}", $fileList, $ignore, 1);
         }
 
         return $fileList;
+    }
+
+    protected function scanDirectory(string $fullPath, string $mentionPath, array &$fileList, array $ignore, int $depth): void
+    {
+        if ($depth > 2 || count($fileList) > 500) return;
+
+        $items = File::directories($fullPath);
+        foreach ($items as $dir) {
+            $name = basename($dir);
+            if (in_array($name, $ignore)) continue;
+
+            $newMention = $mentionPath . '/' . $name;
+            $fileList[] = [
+                'name' => $newMention,
+                'path' => $dir,
+                'type' => 'directory'
+            ];
+            
+            $this->scanDirectory($dir, $newMention, $fileList, $ignore, $depth + 1);
+        }
+
+        $files = File::files($fullPath);
+        foreach ($files as $file) {
+            $fileList[] = [
+                'name' => $mentionPath . '/' . $file->getFilename(),
+                'path' => $file->getRealPath(),
+                'type' => 'file'
+            ];
+        }
     }
 }
