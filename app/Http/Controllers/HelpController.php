@@ -13,22 +13,14 @@ class HelpController extends Controller
 {
     public function index()
     {
+        // Always use a single, unified help session
+        $session = HelpSession::firstOrCreate(
+            ['title' => 'System Guide'],
+            ['id' => \Illuminate\Support\Str::uuid()]
+        );
+
         return Inertia::render('Help', [
-            'sessions' => HelpSession::latest()->get(),
-        ]);
-    }
-
-    public function start(Request $request)
-    {
-        $request->validate(['title' => 'required|string|max:255']);
-        $session = HelpSession::create(['title' => $request->title]);
-        return response()->json($session);
-    }
-
-    public function history(HelpSession $session)
-    {
-        return response()->json([
-            'interactions' => $session->interactions()->oldest()->get()
+            'session' => $session->load('interactions'),
         ]);
     }
 
@@ -40,8 +32,9 @@ class HelpController extends Controller
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
 
         $input = $request->input('message');
-        $sessionId = $request->input('session_id');
-        $session = HelpSession::findOrFail($sessionId);
+        
+        // Find the single help session
+        $session = HelpSession::where('title', 'System Guide')->firstOrFail();
 
         // 1. Build Context & Settings
         $model = Setting::get('llm_model', config('services.ollama.model'));
@@ -59,9 +52,8 @@ class HelpController extends Controller
             $historyContext .= strtoupper($h->role) . ": " . $h->content . "\n";
         }
 
-        // 4. System Prompt (Dedicated Help Persona)
+        // 4. System Prompt
         $systemPrompt = $prompts->buildHelpPrompt();
-        
         $finalPrompt = "System: $systemPrompt\n\n$historyContext\n\nAssistant:";
 
         // 5. Generate Response
@@ -75,8 +67,17 @@ class HelpController extends Controller
         ]);
 
         return response()->json([
-            'message' => $assistantMessage,
-            'intent' => 'HELP'
+            'message' => $assistantMessage
         ]);
+    }
+
+    public function clear()
+    {
+        $session = HelpSession::where('title', 'System Guide')->first();
+        if ($session) {
+            $session->interactions()->delete();
+        }
+
+        return response()->json(['success' => true]);
     }
 }

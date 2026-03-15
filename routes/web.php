@@ -24,9 +24,8 @@ Route::middleware([])->group(function () {
 
     // Help Module
     Route::get('/help', [HelpController::class, 'index'])->name('help');
-    Route::post('/help/start', [HelpController::class, 'start'])->name('help.start');
-    Route::get('/help/history/{session}', [HelpController::class, 'history'])->name('help.history');
     Route::post('/help/send', [HelpController::class, 'send'])->name('help.send');
+    Route::post('/help/clear', [HelpController::class, 'clear'])->name('help.clear');
 
     // Vantage Module
     Route::get('/vantage', function () {

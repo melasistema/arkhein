@@ -26,6 +26,9 @@ const mainNavItems: NavItem[] = [
         href: '/vantage',
         icon: LayoutDashboard,
     },
+];
+
+const secondaryNavItems: NavItem[] = [
     {
         title: 'System Help',
         href: '/help',
@@ -71,6 +74,7 @@ const footerNavItems: NavItem[] = [
         </SidebarContent>
 
         <SidebarFooter>
+            <NavMain :items="secondaryNavItems" />
         </SidebarFooter>
     </Sidebar>
     <slot />
