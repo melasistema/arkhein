@@ -73,6 +73,14 @@ class SettingsController extends Controller
         return back();
     }
 
+    public function rebuild(MemoryService $memory)
+    {
+        $dimensions = (int) Setting::get('embedding_dimensions', 768);
+        $memory->rebuildIndex($dimensions);
+
+        return response()->json(['success' => true]);
+    }
+
     public function update(Request $request, MemoryService $memory)
     {
         $request->validate([

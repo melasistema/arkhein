@@ -39,6 +39,7 @@ const breadcrumbs = [
 
 const syncing = ref(false);
 const recentlySynced = ref(false);
+const isRebuilding = ref(false);
 const foldersList = ref([...props.folders]);
 const pollInterval = ref<any>(null);
 
@@ -48,7 +49,23 @@ const isAnyFolderIndexing = computed(() => {
 });
 
 // The master busy state
-const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value);
+const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value || isRebuilding.value);
+
+const rebuildIndex = async () => {
+    if (isBusy.value) return;
+    
+    isRebuilding.value = true;
+    try {
+        await axios.post('/settings/rebuild');
+        // We show it's done after a short delay since it's background or fast
+        setTimeout(() => {
+            isRebuilding.value = false;
+        }, 2000);
+    } catch (e) {
+        console.error("Rebuild failed", e);
+        isRebuilding.value = false;
+    }
+};
 
 const pollStatus = async () => {
     try {
@@ -256,21 +273,66 @@ const removeFolder = (id: number) => {
                         <CardHeader>
                             <CardTitle class="flex items-center gap-2 text-blue-600">
                                 <BrainCircuit class="h-5 w-5" />
-                                Memory Storage
+                                Memory Architecture
                             </CardTitle>
                             <CardDescription>
-                                Status of your local vector database.
+                                Arkhein uses a dual-layer memory system for sovereignty and speed.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div class="text-sm space-y-2">
-                                <div class="flex justify-between border-b border-border/40 pb-2">
-                                    <span class="text-muted-foreground">Storage Engine:</span>
-                                    <span class="font-mono font-medium">Vektor (Pure PHP)</span>
+                            <div class="space-y-6">
+                                <!-- SQLite Layer (SSOT) -->
+                                <div class="p-4 rounded-2xl bg-muted/40 border border-border/50 flex flex-col gap-3">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <div class="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                                                <Database class="h-4 w-4" />
+                                            </div>
+                                            <span class="text-xs font-bold uppercase tracking-wider">Primary SSOT</span>
+                                        </div>
+                                        <span class="text-[10px] font-mono bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full">SQLite</span>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[10px] text-muted-foreground leading-relaxed">
+                                            The Single Source of Truth where all embeddings, text, and metadata are persisted.
+                                        </span>
+                                        <span class="text-[9px] font-mono text-muted-foreground truncate opacity-60">database: nativephp.sqlite</span>
+                                    </div>
                                 </div>
-                                <div class="flex flex-col gap-1.5 pt-1">
-                                    <span class="text-muted-foreground">Location:</span>
-                                    <span class="font-mono text-[10px] bg-muted/50 p-2 rounded-lg border border-border/50 break-all text-center">storage/app/vektor/</span>
+
+                                <!-- Vektor Layer (Accelerator) -->
+                                <div class="p-4 rounded-2xl bg-muted/40 border border-border/50 flex flex-col gap-3">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <div class="p-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
+                                                <RefreshCw class="h-4 w-4" />
+                                            </div>
+                                            <span class="text-xs font-bold uppercase tracking-wider">Vektor Accelerator</span>
+                                        </div>
+                                        <span class="text-[10px] font-mono bg-orange-500/10 text-orange-600 px-2 py-0.5 rounded-full">Binary Index</span>
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-[10px] text-muted-foreground leading-relaxed">
+                                            A high-speed binary index rebuilt automatically from the SSOT if corrupted or missing.
+                                        </span>
+                                        <span class="text-[9px] font-mono text-muted-foreground truncate opacity-60">path: storage/app/vektor/vector.bin</span>
+                                    </div>
+                                </div>
+
+                                <div class="pt-2">
+                                    <Button 
+                                        variant="outline" 
+                                        size="sm" 
+                                        class="w-full rounded-xl text-xs h-9 border-dashed"
+                                        @click="rebuildIndex"
+                                        :disabled="isBusy"
+                                    >
+                                        <RefreshCw class="mr-2 h-3 w-3" :class="{ 'animate-spin': isRebuilding }" />
+                                        {{ isRebuilding ? 'Rebuilding Index...' : 'Force Index Reconciliation' }}
+                                    </Button>
+                                    <p class="text-[9px] text-muted-foreground text-center mt-3 px-4 italic">
+                                        Reconciles the binary accelerator with the SQLite Source of Truth.
+                                    </p>
                                 </div>
                             </div>
                         </CardContent>
