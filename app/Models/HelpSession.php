@@ -10,8 +10,6 @@ class HelpSession extends Model
 {
     use HasUuids;
 
-    protected $connection = 'nativephp';
-
     protected $fillable = ['title', 'summary', 'embedding', 'metadata'];
 
     protected $casts = [
@@ -21,6 +19,6 @@ class HelpSession extends Model
 
     public function interactions(): HasMany
     {
-        return $this->hasMany(HelpInteraction::class);
+        return $this->hasMany(HelpInteraction::class, 'help_session_id', 'id');
     }
 }

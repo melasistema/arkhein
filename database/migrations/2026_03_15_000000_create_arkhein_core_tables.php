@@ -72,8 +72,8 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 7. Vantage Interaction History
-        Schema::create('vantage_interactions', function (Blueprint $table) {
+        // 7. Vantage Module: Interactions
+        Schema::create('vertical_interactions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vertical_id')->constrained()->cascadeOnDelete();
             $table->string('role'); // user, assistant
@@ -88,10 +88,10 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('vantage_interactions');
+        Schema::dropIfExists('vertical_interactions');
         Schema::dropIfExists('verticals');
-        Schema::dropIfExists('messages');
-        Schema::dropIfExists('conversations');
+        Schema::dropIfExists('help_interactions');
+        Schema::dropIfExists('help_sessions');
         Schema::dropIfExists('knowledge');
         Schema::dropIfExists('managed_folders');
         Schema::dropIfExists('settings');

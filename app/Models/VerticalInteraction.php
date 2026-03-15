@@ -5,10 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class VantageInteraction extends Model
+class VerticalInteraction extends Model
 {
-    protected $connection = 'nativephp';
-
     protected $fillable = [
         'vertical_id',
         'role',

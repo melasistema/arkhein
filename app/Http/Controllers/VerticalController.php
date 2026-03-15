@@ -7,9 +7,7 @@ use App\Models\Setting;
 use App\Models\ManagedFolder;
 use App\Services\OllamaService;
 use App\Services\KnowledgeService;
-use App\Services\ArchiveService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class VerticalController extends Controller
 {
@@ -82,6 +80,11 @@ class VerticalController extends Controller
         
         $request->validate(['query' => 'required|string']);
         
+        // Ensure model is hydrated even in non-standard binding contexts
+        if (!$vertical->exists) {
+            $vertical = Vertical::findOrFail($vertical->id ?? $request->route('vertical'));
+        }
+        
         $input = $request->input('query');
         $model = Setting::get('llm_model', config('services.ollama.model'));
 
@@ -94,7 +97,7 @@ class VerticalController extends Controller
         // 2. Fetch Conversation History (last 10 messages for context)
         $history = $vertical->interactions()
             ->latest()
-            ->limit(11) // User msg + 10 previous
+            ->limit(11) 
             ->get()
             ->reverse();
 
@@ -120,7 +123,7 @@ class VerticalController extends Controller
 
         // 5. Generate Response
         $response = $ollama->generate($model, $finalPrompt);
-        $assistantContent = $response['response'] ?? "I couldn't analyze the documents.";
+        $assistantContent = data_get($response, 'response', "I couldn't analyze the documents.");
 
         // 6. Persist Assistant Response
         $vertical->interactions()->create([

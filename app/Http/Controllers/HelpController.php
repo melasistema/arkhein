@@ -58,7 +58,7 @@ class HelpController extends Controller
 
         // 5. Generate Response
         $response = $ollama->generate($model, $finalPrompt);
-        $assistantMessage = $response['response'] ?? "I'm sorry, I couldn't generate a response.";
+        $assistantMessage = data_get($response, 'response', "I'm sorry, I couldn't generate a response.");
 
         // 6. Save Assistant Response
         $session->interactions()->create([

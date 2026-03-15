@@ -7,8 +7,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class HelpInteraction extends Model
 {
-    protected $connection = 'nativephp';
-
     protected $fillable = ['help_session_id', 'role', 'content', 'embedding', 'metadata'];
 
     protected $casts = [

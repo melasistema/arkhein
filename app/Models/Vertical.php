@@ -4,10 +4,13 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Vertical extends Model
 {
-    protected $connection = 'nativephp';
+    use HasFactory;
+    protected $keyType = 'int';
+    public $incrementing = true;
 
     protected $fillable = [
         'name',
@@ -27,6 +30,6 @@ class Vertical extends Model
 
     public function interactions(): \Illuminate\Database\Eloquent\Relations\HasMany
     {
-        return $this->hasMany(VantageInteraction::class);
+        return $this->hasMany(VerticalInteraction::class, 'vertical_id', 'id');
     }
 }

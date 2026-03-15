@@ -13,12 +13,7 @@ use Illuminate\Support\Facades\Artisan;
 pest()->extend(TestCase::class)
     ->use(RefreshDatabase::class)
     ->beforeEach(function () {
-        // Since we have multiple in-memory databases, RefreshDatabase 
-        // only handles the default one. We must manually migrate the secondary one.
-        Artisan::call('migrate', [
-            '--database' => 'nativephp',
-            '--path' => 'database/migrations'
-        ]);
+        $this->withoutMiddleware();
     })
     ->in('Feature');
 
