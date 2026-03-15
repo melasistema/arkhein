@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, MessageSquare, Settings } from 'lucide-vue-next';
+import { BookOpen, FolderGit2, LayoutGrid, LayoutDashboard, MessageSquare, Settings } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import {
@@ -20,6 +20,11 @@ const mainNavItems: NavItem[] = [
         title: 'Dashboard',
         href: dashboard.url(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Vantage',
+        href: '/vantage',
+        icon: LayoutDashboard,
     },
     {
         title: 'Chat',

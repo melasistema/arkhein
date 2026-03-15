@@ -14,9 +14,19 @@ Route::get('/', [ChatController::class, 'index'])->name('chat');
 Route::middleware([])->group(function () {
     Route::get('/dashboard', function () {
         return Inertia::render('Dashboard', [
-            'verticals' => \App\Models\Vertical::with('folder')->get()
+            'stats' => [
+                'verticals_count' => \App\Models\Vertical::count(),
+                'folders_count' => \App\Models\ManagedFolder::count(),
+                'knowledge_count' => \App\Models\Knowledge::count(),
+            ]
         ]);
     })->name('dashboard');
+
+    Route::get('/vantage', function () {
+        return Inertia::render('Vantage', [
+            'verticals' => \App\Models\Vertical::with('folder')->get()
+        ]);
+    })->name('vantage');
     Route::get('/chat/suggestions', [ChatController::class, 'suggestions'])->name('chat.suggestions');
     Route::post('/chat/start', [ChatController::class, 'start'])->name('chat.start');
     Route::get('/chat/history/{conversation}', [ChatController::class, 'history'])->name('chat.history');
