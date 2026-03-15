@@ -6,9 +6,11 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Conversation extends Model
+class HelpSession extends Model
 {
     use HasUuids;
+
+    protected $connection = 'nativephp';
 
     protected $fillable = ['title', 'summary', 'embedding', 'metadata'];
 
@@ -17,8 +19,8 @@ class Conversation extends Model
         'metadata' => 'array',
     ];
 
-    public function messages(): HasMany
+    public function interactions(): HasMany
     {
-        return $this->hasMany(Message::class);
+        return $this->hasMany(HelpInteraction::class);
     }
 }
