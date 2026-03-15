@@ -2,21 +2,19 @@
 
 namespace Tests\Feature;
 
-use App\Models\HelpSession;
 use App\Models\HelpInteraction;
 use Illuminate\Support\Facades\Http;
 
-test('it initializes with a default system guide session', function () {
+test('it initializes with an empty stream', function () {
     $response = $this->get(route('help'));
 
     $response->assertStatus(200);
     $response->assertInertia(fn ($page) => $page
         ->component('Help')
-        ->has('session')
-        ->where('session.title', 'System Guide')
+        ->has('interactions', 0)
     );
 
-    expect(HelpSession::count())->toBe(1);
+    expect(HelpInteraction::count())->toBe(0); 
 });
 
 test('it persists help interactions', function () {
@@ -24,8 +22,7 @@ test('it persists help interactions', function () {
         '*/api/generate' => Http::response(['response' => 'Arkhein is a local-first agent.'], 200),
     ]);
 
-    // Ensure session exists
-    $this->get(route('help'));
+    $this->get(route('help')); // Initialize for side effects
 
     $response = $this->postJson(route('help.send'), [
         'message' => 'What is Arkhein?'
@@ -39,15 +36,11 @@ test('it persists help interactions', function () {
 });
 
 test('it can clear help history', function () {
-    $session = HelpSession::firstOrCreate(['title' => 'System Guide']);
-    $session->interactions()->delete(); // Ensure it's empty
-    
-    $session->interactions()->create(['role' => 'user', 'content' => 'Hello']);
-
-    expect($session->interactions()->count())->toBe(1);
+    HelpInteraction::create(['role' => 'user', 'content' => 'Hello']);
+    expect(HelpInteraction::count())->toBe(1);
 
     $response = $this->postJson(route('help.clear'));
 
     $response->assertStatus(200);
-    expect($session->interactions()->count())->toBe(0);
+    expect(HelpInteraction::count())->toBe(0);
 });

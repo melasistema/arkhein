@@ -6,8 +6,9 @@ use App\Models\Vertical;
 use App\Models\Setting;
 use App\Models\ManagedFolder;
 use App\Services\OllamaService;
-use App\Services\KnowledgeService;
+use App\Services\RagService; // Updated
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log; // Added for debugging
 
 class VerticalController extends Controller
 {
@@ -66,7 +67,7 @@ class VerticalController extends Controller
         }
 
         $folder = ManagedFolder::find($vertical->folder_id);
-        \App\Jobs\IndexFolderJob::dispatch($folder);
+        \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
 
         return response()->json([
             'success' => true,
@@ -74,22 +75,21 @@ class VerticalController extends Controller
         ]);
     }
 
-    public function query(Request $request, Vertical $vertical, OllamaService $ollama, KnowledgeService $knowledge)
+    public function query(Request $request, string $verticalId, OllamaService $ollama, RagService $rag) // Updated signature
     {
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
         
-        $request->validate(['query' => 'required|string']);
+        // Manually retrieve the vertical
+        $vertical = Vertical::findOrFail($verticalId);
         
-        // Ensure model is hydrated even in non-standard binding contexts
-        if (!$vertical->exists) {
-            $vertical = Vertical::findOrFail($vertical->id ?? $request->route('vertical'));
-        }
+        $request->validate(['query' => 'required|string']);
         
         $input = $request->input('query');
         $model = Setting::get('llm_model', config('services.ollama.model'));
 
         // 1. Persist User Message
         $vertical->interactions()->create([
+            'vertical_id' => $vertical->id,
             'role' => 'user',
             'content' => $input
         ]);
@@ -101,32 +101,42 @@ class VerticalController extends Controller
             ->get()
             ->reverse();
 
-        $historyContext = "CONVERSATION HISTORY:\n";
+        $historyContext = "CONVERSATION HISTORY:
+";
         foreach ($history as $msg) {
-            $historyContext .= strtoupper($msg->role) . ": " . $msg->content . "\n";
+            $historyContext .= strtoupper($msg->role) . ": " . $msg->content . "
+";
         }
 
         // 3. Contextual Recall (Scoped to Vertical Folder)
-        $relevantKnowledge = $knowledge->recall($input, 10, $vertical->folder_id);
+        $relevantKnowledge = $rag->recall($input, 10, $vertical->folder_id);
         
-        $context = "VERTICAL CONTEXT (Source: " . ($vertical->folder?->name ?? 'Folder') . "):\n";
+        $context = "VERTICAL CONTEXT (Source: " . ($vertical->folder?->name ?? 'Folder') . "):
+";
         foreach ($relevantKnowledge as $m) {
-            $context .= "- " . $m['content'] . "\n";
+            $context .= "- " . $m['content'] . "
+";
         }
 
         // 4. Focused System Prompt
         $basePrompt = $vertical->settings['system_prompt'] ?? config('arkhein.vantage.prompts.rag_system');
 
-        $systemPrompt = $basePrompt . "\n\n" . $context . "\n\n" . $historyContext;
+        $systemPrompt = $basePrompt . "
 
-        $finalPrompt = "System: $systemPrompt\n\nAssistant:";
+" . $context . "
 
-        // 5. Generate Response
-        $response = $ollama->generate($model, $finalPrompt);
-        $assistantContent = data_get($response, 'response', "I couldn't analyze the documents.");
+" . $historyContext;
+
+        $finalPrompt = "System: $systemPrompt
+
+Assistant:";
+
+        // 5. Generate Response (OllamaService handles config internally)
+        $assistantContent = $ollama->generate($finalPrompt);
 
         // 6. Persist Assistant Response
-        $vertical->interactions()->create([
+        $interaction = $vertical->interactions()->create([
+            'vertical_id' => $vertical->id,
             'role' => 'assistant',
             'content' => $assistantContent,
             'metadata' => [
@@ -138,7 +148,7 @@ class VerticalController extends Controller
 
         return response()->json([
             'response' => $assistantContent,
-            'sources' => $vertical->interactions()->latest()->first()->metadata['sources'] ?? []
+            'sources' => $interaction->metadata['sources'] ?? []
         ]);
     }
 }

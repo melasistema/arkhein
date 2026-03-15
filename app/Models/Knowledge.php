@@ -9,6 +9,8 @@ class Knowledge extends Model
 {
     use HasUuids;
 
+    protected $connection = 'nativephp';
+
     protected $table = 'knowledge';
 
     protected $fillable = [

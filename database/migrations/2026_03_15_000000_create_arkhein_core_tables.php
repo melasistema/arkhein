@@ -39,30 +39,17 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 4. Help Module: Sessions
-        Schema::create('help_sessions', function (Blueprint $table) {
-            $table->uuid('id')->primary();
-            $table->string('title')->nullable();
-            $table->text('summary')->nullable();
-            $table->json('embedding')->nullable();
-            $table->json('metadata')->nullable();
-            $table->timestamps();
-        });
-
-        // 5. Help Module: Interactions
+        // 4. Help Module: Interactions (Linear Stream)
         Schema::create('help_interactions', function (Blueprint $table) {
             $table->id();
-            $table->uuid('help_session_id')->index();
             $table->string('role'); // user, assistant, system
             $table->text('content');
             $table->json('embedding')->nullable();
             $table->json('metadata')->nullable();
             $table->timestamps();
-
-            $table->foreign('help_session_id')->references('id')->on('help_sessions')->onDelete('cascade');
         });
 
-        // 6. Vantage Verticals (Isolated Document Analysis)
+        // 5. Vantage Module: Verticals (Isolated Document Analysis)
         Schema::create('verticals', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -72,7 +59,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 7. Vantage Module: Interactions
+        // 6. Vantage Module: Interactions
         Schema::create('vertical_interactions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vertical_id')->constrained()->cascadeOnDelete();
@@ -91,7 +78,6 @@ return new class extends Migration
         Schema::dropIfExists('vertical_interactions');
         Schema::dropIfExists('verticals');
         Schema::dropIfExists('help_interactions');
-        Schema::dropIfExists('help_sessions');
         Schema::dropIfExists('knowledge');
         Schema::dropIfExists('managed_folders');
         Schema::dropIfExists('settings');

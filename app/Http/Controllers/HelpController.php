@@ -4,23 +4,16 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use Inertia\Inertia;
-use App\Models\Setting;
 use App\Services\OllamaService;
 use App\Services\PromptService;
-use App\Models\HelpSession;
+use App\Models\HelpInteraction;
 
 class HelpController extends Controller
 {
     public function index()
     {
-        // Always use a single, unified help session
-        $session = HelpSession::firstOrCreate(
-            ['title' => 'System Guide'],
-            ['id' => \Illuminate\Support\Str::uuid()]
-        );
-
         return Inertia::render('Help', [
-            'session' => $session->load('interactions'),
+            'interactions' => HelpInteraction::oldest()->get(),
         ]);
     }
 
@@ -33,35 +26,28 @@ class HelpController extends Controller
 
         $input = $request->input('message');
         
-        // Find the single help session
-        $session = HelpSession::where('title', 'System Guide')->firstOrFail();
-
-        // 1. Build Context & Settings
-        $model = Setting::get('llm_model', config('services.ollama.model'));
-
-        // 2. Save User Interaction
-        $session->interactions()->create([
+        // 1. Save User Interaction
+        HelpInteraction::create([
             'role' => 'user', 
             'content' => $input
         ]);
 
-        // 3. Build History Context
-        $history = $session->interactions()->latest()->limit(10)->get()->reverse();
+        // 2. Build History Context
+        $history = HelpInteraction::latest()->limit(10)->get()->reverse();
         $historyContext = "RECENT CONVERSATION:\n";
         foreach ($history as $h) {
             $historyContext .= strtoupper($h->role) . ": " . $h->content . "\n";
         }
 
-        // 4. System Prompt
+        // 3. System Prompt
         $systemPrompt = $prompts->buildHelpPrompt();
         $finalPrompt = "System: $systemPrompt\n\n$historyContext\n\nAssistant:";
 
-        // 5. Generate Response
-        $response = $ollama->generate($model, $finalPrompt);
-        $assistantMessage = data_get($response, 'response', "I'm sorry, I couldn't generate a response.");
+        // 4. Generate Response (OllamaService handles config internally)
+        $assistantMessage = $ollama->generate($finalPrompt);
 
-        // 6. Save Assistant Response
-        $session->interactions()->create([
+        // 5. Save Assistant Response
+        HelpInteraction::create([
             'role' => 'assistant',
             'content' => $assistantMessage
         ]);
@@ -73,11 +59,7 @@ class HelpController extends Controller
 
     public function clear()
     {
-        $session = HelpSession::where('title', 'System Guide')->first();
-        if ($session) {
-            $session->interactions()->delete();
-        }
-
+        HelpInteraction::query()->delete();
         return response()->json(['success' => true]);
     }
 }

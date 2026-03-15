@@ -3,11 +3,11 @@
 namespace App\Services;
 
 use App\Models\ManagedFolder;
-use App\Models\Setting;
 use App\Models\Knowledge;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use App\Models\Setting; // Corrected to be present only once
 
 class ArchiveService
 {
@@ -34,8 +34,7 @@ class ArchiveService
         Log::info("Arkhein: Starting " . ($forceFull ? 'FULL' : 'INCREMENTAL') . " index for @{$folder->name}");
 
         if ($forceFull) {
-            Knowledge::on('nativephp')
-                ->where('type', 'file')
+            Knowledge::on('nativephp')->where('type', 'file')
                 ->where('metadata->folder_id', $folder->id)
                 ->delete();
         }
@@ -45,8 +44,9 @@ class ArchiveService
         $totalChunks = 0;
         $anyChanges = false;
 
-        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
-        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model')); // Get setting here
+        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions')); // Get setting here
+        Log::debug("ArchiveService: Using embedding model: {$embeddingModel}"); // Added logging
 
         foreach ($files as $file) {
             if ($this->shouldIgnore($file->getRelativePathname())) continue;
@@ -59,8 +59,7 @@ class ArchiveService
 
             // INCREMENTAL CHECK
             if (!$forceFull) {
-                $existing = Knowledge::on('nativephp')
-                    ->where('type', 'file')
+                $existing = Knowledge::on('nativephp')->where('type', 'file')
                     ->where('metadata->path', $filePath)
                     ->first();
 
@@ -71,8 +70,7 @@ class ArchiveService
 
                 // If file changed, delete its old chunks before re-indexing
                 if ($existing) {
-                    Knowledge::on('nativephp')
-                        ->where('type', 'file')
+                    Knowledge::on('nativephp')->where('type', 'file')
                         ->where('metadata->path', $filePath)
                         ->delete();
                 }
@@ -84,7 +82,7 @@ class ArchiveService
             $chunks = str_split($content, $this->chunkSize);
             
             foreach ($chunks as $index => $chunk) {
-                $embedding = $this->ollama->embeddings($embeddingModel, $chunk);
+                $embedding = $this->ollama->embeddings($chunk, $embeddingModel); // Pass embeddingModel here
                 
                 if ($embedding) {
                     Knowledge::on('nativephp')->create([
@@ -140,7 +138,8 @@ class ArchiveService
     protected function sanitizeUtf8(string $text): string
     {
         $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
-        $text = preg_replace('/[^\x20-\x7E\t\n\r\x{00A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}]/u', '', $text);
+        $text = preg_replace('/[^\x20-\x7E	
+\x{00A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}]/u', '', $text);
         return trim($text);
     }
 

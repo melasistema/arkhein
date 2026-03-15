@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Setting extends Model
 {
+    protected $connection = 'nativephp';
     protected $primaryKey = 'key';
     public $incrementing = false;
     protected $keyType = 'string';

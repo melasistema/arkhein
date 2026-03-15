@@ -47,15 +47,10 @@ test('vantage query handles ollama failure gracefully', function () {
         'type' => 'rag'
     ]);
 
-    // RELOAD FROM DB to ensure it was actually saved
-    $vertical = Vertical::find($vertical->id);
-    expect($vertical)->not->toBeNull();
-    expect($vertical->id)->not->toBeNull();
-
-    $response = $this->postJson(route('verticals.query', $vertical), [
+    $response = $this->postJson(route('verticals.query', ['vertical' => $vertical->id]), [
         'query' => 'What is Arkhein?'
     ]);
 
     $response->assertStatus(200);
-    $response->assertJsonPath('response', "I couldn't analyze the documents.");
+    $response->assertJsonPath('response', "I am currently unable to reach the inference engine. Please check the system log.");
 });

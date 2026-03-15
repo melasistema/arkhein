@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Knowledge;
+use App\Models\Setting; // Added
 use Centamiv\Vektor\Core\Config;
 use Centamiv\Vektor\Services\Indexer;
 use Centamiv\Vektor\Services\Searcher;
@@ -68,35 +69,61 @@ class MemoryService
      */
     public function rebuildIndex(int $dimensions): bool
     {
-        Log::info("Arkhein: Rebuilding Vektor index from Knowledge Base SSOT. Dimensions: $dimensions");
-        
-        $this->clearBinaryFiles();
-        Config::setDimensions($dimensions);
-        Config::setDataDir($this->storagePath);
-        
-        $indexer = new Indexer();
-        
-        Knowledge::on('nativephp')->chunk(100, function ($items) use ($indexer, $dimensions) {
-            foreach ($items as $item) {
-                try {
-                    $embedding = $item->embedding;
-                    if (is_string($embedding)) {
-                        $embedding = json_decode($embedding, true);
+        return $this->withRebuildLock(function () use ($dimensions) {
+            Log::info("Arkhein: Rebuilding Vektor index from Knowledge Base SSOT. Dimensions: $dimensions");
+            Log::debug("MemoryService: Knowledge count before rebuild: " . Knowledge::on('nativephp')->count());
+
+            $this->clearBinaryFiles();
+            Config::setDimensions($dimensions);
+            Config::setDataDir($this->storagePath);
+
+            $indexer = new Indexer();
+
+            Knowledge::on('nativephp')->chunk(100, function ($items) use ($indexer, $dimensions) {
+                foreach ($items as $item) {
+                    try {
+                        $embedding = $item->embedding;
+                        if (is_string($embedding)) {
+                            $embedding = json_decode($embedding, true);
+                        }
+
+                        if (!is_array($embedding)) continue;
+
+                        $itemDimensions = count($embedding);
+                        if ($itemDimensions !== $dimensions) continue;
+
+                        $indexer->insert($item->id, $embedding);
+                    } catch (\Throwable $e) {
+                        Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
                     }
-
-                    if (!is_array($embedding)) continue;
-
-                    $itemDimensions = count($embedding);
-                    if ($itemDimensions !== $dimensions) continue;
-
-                    $indexer->insert($item->id, $embedding);
-                } catch (\Exception $e) {
-                    Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
                 }
-            }
-        });
+            });
 
-        return true;
+            return true;
+        });
+    }
+
+    protected function withRebuildLock(callable $callback): bool
+    {
+        $lockPath = $this->storagePath . DIRECTORY_SEPARATOR . 'rebuild.lock';
+        $handle = fopen($lockPath, 'c');
+
+        if ($handle === false) {
+            Log::error('Arkhein: Failed to create/open rebuild lock file.');
+            return false;
+        }
+
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                Log::error('Arkhein: Failed to acquire rebuild lock.');
+                return false;
+            }
+
+            return (bool) $callback();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     /**
@@ -106,7 +133,7 @@ class MemoryService
     {
         try {
             $this->ensureIndex(count($embedding));
-            
+
             $dbResult = Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
@@ -141,7 +168,7 @@ class MemoryService
             $results = $searcher->search($vector, $limit);
 
             // If we have data in DB but 0 results from Vektor, something is wrong with the index
-            if (empty($results) && Knowledge::on('nativephp')->count() > 0) {
+            if (empty($results) && Knowledge::on('nativephp')->count() > 0) { // Added on('nativephp')
                 Log::warning("Arkhein: Search returned 0 hits but DB is not empty. Possible index corruption. Rebuilding...");
                 $this->rebuildIndex(count($vector));
                 // Retry search once
@@ -200,7 +227,7 @@ class MemoryService
 
             if ($similarity < $threshold) continue;
 
-            $item = Knowledge::on('nativephp')->find($id);
+            $item = Knowledge::on('nativephp')->find($id); // Added on('nativephp')
 
             if ($item) {
                 $parsed[] = [

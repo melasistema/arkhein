@@ -83,8 +83,11 @@ class SettingsController extends Controller
         $folders = ManagedFolder::all();
         
         foreach ($folders as $folder) {
+            // Set UI state immediately; job will clear it on completion/failure.
             $folder->update(['is_indexing' => true]);
-            \App\Jobs\IndexFolderJob::dispatch($folder);
+
+            // Prefer NativePHP's background queue connection for desktop UX.
+            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
         }
 
         return back()->with([

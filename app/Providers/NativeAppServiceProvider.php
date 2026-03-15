@@ -19,7 +19,16 @@ class NativeAppServiceProvider implements ProvidesPhpIni
 
         // Proactive Memory Integrity Check
         try {
+            $llmModel = \App\Models\Setting::on('nativephp')->find('llm_model')?->value;
+            $embeddingModel = \App\Models\Setting::on('nativephp')->find('embedding_model')?->value;
             $dim = (int) \App\Models\Setting::on('nativephp')->find('embedding_dimensions')?->value ?? config('services.ollama.embedding_dimensions');
+
+            \Illuminate\Support\Facades\Log::debug("Arkhein NativeAppServiceProvider: Initial Model Settings", [
+                'llm_model' => $llmModel,
+                'embedding_model' => $embeddingModel,
+                'embedding_dimensions' => $dim,
+            ]);
+
             app(\App\Services\MemoryService::class)->ensureIndex($dim);
         } catch (\Exception $e) {
             \Illuminate\Support\Facades\Log::error("Arkhein: Boot-time indexing failed: " . $e->getMessage());

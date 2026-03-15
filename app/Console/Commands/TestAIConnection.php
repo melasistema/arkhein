@@ -9,7 +9,7 @@ use App\Services\MemoryService;
 class TestAIConnection extends Command
 {
     protected $signature = 'test:ai';
-    protected $description = 'Test Ollama and Redis Stack Vector Search connectivity';
+    protected $description = 'Test Ollama embeddings and Vektor (SQLite SSOT + binary index)';
 
     public function handle(OllamaService $ollama, MemoryService $memory)
     {
@@ -24,14 +24,11 @@ class TestAIConnection extends Command
 
         $this->success("Ollama connected! Found " . count($models) . " models.");
         
-        // Select a model
-        $model = $models[0]['name'] ?? 'llama3';
-        $this->info("Using model: $model");
-
         $text = "Hello Arkhein, testing long term memory.";
         $this->info("Generating embeddings for: '$text'");
-        
-        $embedding = $ollama->embeddings($model, $text);
+
+        // embeddings() selects the embedding model from Settings/config.
+        $embedding = $ollama->embeddings($text);
         
         if (!$embedding) {
             $this->error("Failed to generate embedding.");
@@ -40,18 +37,18 @@ class TestAIConnection extends Command
 
         $this->success("Embedding generated (" . count($embedding) . " dimensions).");
 
-        $this->info("Checking Redis Stack Connection...");
+        $this->info("Checking Vektor Index...");
         $dimensions = count($embedding);
-        
+
         if ($memory->ensureIndex($dimensions)) {
-            $this->success("Redis Stack Index verified.");
+            $this->success("Vektor index verified.");
         } else {
-            $this->error("Redis Stack Index creation failed.");
+            $this->error("Vektor index verification failed.");
             return;
         }
 
-        $this->info("Saving memory to Redis...");
-        if ($memory->save('test-1', $text, $embedding, ['test' => true])) {
+        $this->info("Saving memory...");
+        if ($memory->save('test-1', $text, $embedding, 'test', ['test' => true])) {
             $this->success("Memory saved successfully.");
         }
 

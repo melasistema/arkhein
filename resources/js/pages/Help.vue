@@ -1,18 +1,18 @@
 <script setup lang="ts">
+import AppLayout from '@/layouts/AppLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import { ref, nextTick, onMounted } from 'vue';
 import axios from 'axios';
+import Button from '@/components/ui/button/Button.vue';
+import Markdown from '@/components/Markdown.vue';
 import { 
     Send, Bot, User, HelpCircle,
     Loader2, Sparkles, Eraser
 } from 'lucide-vue-next';
-import { ref, nextTick, onMounted } from 'vue';
-import Markdown from '@/components/Markdown.vue';
-import Button from '@/components/ui/button/Button.vue';
 import { Input } from '@/components/ui/input';
-import AppLayout from '@/layouts/AppLayout.vue';
 
 const props = defineProps<{
-    session: any;
+    interactions: any[];
 }>();
 
 interface Interaction {
@@ -27,7 +27,7 @@ const breadcrumbs = [
 /**
  * State
  */
-const interactions = ref<Interaction[]>(props.session.interactions || []);
+const localInteractions = ref<Interaction[]>(props.interactions || []);
 const newMessage = ref('');
 const isLoading = ref(false);
 const isClearing = ref(false);
@@ -45,19 +45,16 @@ const checkOllamaStatus = async () => {
 
 const scrollToBottom = async () => {
     await nextTick();
-
     if (scrollAreaRef.value) {
         scrollAreaRef.value.scrollTop = scrollAreaRef.value.scrollHeight;
     }
 };
 
 const sendMessage = async () => {
-    if (!newMessage.value.trim() || isLoading.value) {
-return;
-}
+    if (!newMessage.value.trim() || isLoading.value) return;
 
     const userContent = newMessage.value;
-    interactions.value.push({ role: 'user', content: userContent });
+    localInteractions.value.push({ role: 'user', content: userContent });
     newMessage.value = '';
     isLoading.value = true;
     
@@ -68,12 +65,12 @@ return;
             message: userContent
         });
 
-        interactions.value.push({
+        localInteractions.value.push({
             role: 'assistant',
             content: response.data.message
         });
     } catch (error) {
-        interactions.value.push({
+        localInteractions.value.push({
             role: 'assistant',
             content: 'Sorry, I encountered an error while processing your request.',
         });
@@ -84,20 +81,13 @@ return;
 };
 
 const clearHistory = async () => {
-    if (isClearing.value) {
-return;
-}
-
-    if (!confirm("Clear all help interaction history?")) {
-return;
-}
+    if (isClearing.value) return;
+    if (!confirm("Clear all help interaction history?")) return;
 
     isClearing.value = true;
-
     try {
-        // We'll use a generic clear for the help module
         await axios.post('/help/clear');
-        interactions.value = [];
+        localInteractions.value = [];
     } catch (e) {
         console.error("Failed to clear help history");
     } finally {
@@ -131,10 +121,10 @@ onMounted(() => {
                 
                 <div class="flex items-center gap-4">
                     <div class="flex items-center gap-2">
-                        <span v-if="isOllamaOnline" class="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[9px] font-black uppercase text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                        <span v-if="isOllamaOnline" class="inline-flex items-center rounded-full bg-green-100 px-2.5 py-0.5 text-[9px] font-black uppercase text-green-800 dark:bg-green-900/30 dark:text-green-400">
                             Ollama Online
                         </span>
-                        <span v-else class="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[9px] font-black uppercase text-red-800 dark:bg-red-900/30 dark:text-red-400">
+                        <span v-else class="inline-flex items-center rounded-full bg-red-100 px-2.5 py-0.5 text-[9px] font-black uppercase text-red-800 dark:bg-red-900/30 dark:text-red-400">
                             Ollama Offline
                         </span>
                     </div>
@@ -146,7 +136,7 @@ onMounted(() => {
 
             <!-- Chat Body -->
             <div ref="scrollAreaRef" class="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
-                <div v-if="interactions.length === 0" class="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
+                <div v-if="localInteractions.length === 0" class="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
                     <div class="p-4 rounded-3xl bg-muted mb-4">
                         <Sparkles class="h-8 w-8 text-primary" />
                     </div>
@@ -155,7 +145,7 @@ onMounted(() => {
                 </div>
 
                 <div
-                    v-for="(interaction, index) in interactions"
+                    v-for="(interaction, index) in localInteractions"
                     :key="index"
                     class="flex w-full flex-col gap-3"
                     :class="interaction.role === 'user' ? 'items-end' : 'items-start'"

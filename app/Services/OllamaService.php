@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use App\Models\Setting;
 
 class OllamaService
 {
@@ -17,10 +18,26 @@ class OllamaService
     /**
      * Generate a completion from a model.
      */
-    public function generate(string $model, string $prompt, array $options = [])
+    public function generate(string $prompt, ?string $model = null, array $options = []): string
     {
+        $settingModel = Setting::get('llm_model');
+        $configModel = config('services.ollama.model');
+        $selectedModel = $model ?? $settingModel ?? $configModel; // Correct fallback order
+
+        Log::debug("OllamaService: Generating with model selection", [
+            'explicit_model_arg' => $model,
+            'setting_value' => $settingModel,
+            'config_fallback' => $configModel,
+            'final_selected_model' => $selectedModel,
+        ]);
+        
+        if (empty($selectedModel)) {
+            Log::error("Ollama generate failed: No LLM model configured or provided from Settings or config.");
+            return "I am currently unable to reach the inference engine. No model configured.";
+        }
+
         $payload = [
-            'model' => $model,
+            'model' => $selectedModel,
             'prompt' => $this->sanitize($prompt),
             'stream' => false,
         ];
@@ -40,19 +57,35 @@ class OllamaService
 
         if ($response->failed()) {
             Log::error("Ollama generate failed: " . $response->body());
-            return null;
+            return "I am currently unable to reach the inference engine. Please check the system log.";
         }
 
-        return $response->json();
+        return $response->json('response') ?? "I am currently unable to reach the inference engine. Please check the system log.";
     }
 
     /**
      * Generate embeddings for a given text.
      */
-    public function embeddings(string $model, string $prompt)
+    public function embeddings(string $prompt, ?string $model = null): ?array
     {
+        $settingModel = Setting::get('embedding_model');
+        $configModel = config('services.ollama.embedding_model');
+        $selectedModel = $model ?? $settingModel ?? $configModel; // Correct fallback order
+
+        Log::debug("OllamaService: Getting embeddings with model selection", [
+            'explicit_model_arg' => $model,
+            'setting_value' => $settingModel,
+            'config_fallback' => $configModel,
+            'final_selected_model' => $selectedModel,
+        ]);
+
+        if (empty($selectedModel)) {
+            Log::error("Ollama embeddings failed: No embedding model configured or provided from Settings or config.");
+            return null;
+        }
+
         $response = Http::timeout(60)->post("{$this->host}/api/embeddings", [
-            'model' => $model,
+            'model' => $selectedModel,
             'prompt' => $this->sanitize($prompt),
         ]);
 
@@ -67,7 +100,7 @@ class OllamaService
     /**
      * List local models.
      */
-    public function tags()
+    public function tags(): array
     {
         $response = Http::get("{$this->host}/api/tags");
 
@@ -75,7 +108,7 @@ class OllamaService
             return [];
         }
 
-        return $response->json('models');
+        return $response->json('models') ?? [];
     }
 
     /**
@@ -83,6 +116,12 @@ class OllamaService
      */
     protected function sanitize(string $text): string
     {
-        return mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+        $sanitized = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
+        if ($sanitized === false) {
+            Log::error("OllamaService: Malformed UTF-8 characters detected and removed.");
+            // Replace malformed characters with a Unicode replacement character
+            $sanitized = iconv('UTF-8', 'UTF-8//IGNORE', $text);
+        }
+        return $sanitized;
     }
 }
