@@ -18,7 +18,7 @@ import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue';
 import Markdown from '@/components/Markdown.vue';
 import { 
     FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
-    FileText, Search, Database, HardDrive, Trash2
+    FileText, Search, Database, HardDrive, Trash2, Eraser
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -34,10 +34,27 @@ const selectedFolderId = ref<string>('');
 const isCreating = ref(false);
 const isSyncing = ref(false);
 const isQuerying = ref(false);
+const isClearing = ref(false);
 const query = ref('');
-const messages = ref<any[]>([]);
+const messages = ref<any[]>(props.vertical?.interactions ? [...props.vertical.interactions].reverse() : []);
 const sources = ref<any[]>([]);
 const scrollAreaRef = ref<any>(null);
+
+const clearHistory = async () => {
+    if (!currentVertical.value || isClearing.value) return;
+    if (!confirm('Clear all conversation history for this Vantage card?')) return;
+    
+    isClearing.value = true;
+    try {
+        await axios.delete(`/verticals/${currentVertical.value.id}/history`);
+        messages.value = [];
+        sources.value = [];
+    } catch (e) {
+        console.error("Failed to clear history", e);
+    } finally {
+        isClearing.value = false;
+    }
+};
 
 const scrollToBottom = async () => {
     await nextTick();
@@ -193,6 +210,9 @@ const sendQuery = async () => {
                         </div>
                     </div>
                     <div class="flex gap-1">
+                        <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isClearing || messages.length === 0" @click="clearHistory" title="Clear Conversation">
+                            <Eraser class="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isSyncing" @click="syncVertical" title="Re-index Folder">
                             <RefreshCcw class="h-3 w-3" :class="{ 'animate-spin': isSyncing }" />
                         </Button>

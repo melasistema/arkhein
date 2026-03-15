@@ -24,9 +24,13 @@ Route::middleware([])->group(function () {
 
     Route::get('/vantage', function () {
         return Inertia::render('Vantage', [
-            'verticals' => \App\Models\Vertical::with('folder')->get()
+            'verticals' => \App\Models\Vertical::with(['folder', 'interactions' => function($q) {
+                $q->latest()->limit(50);
+            }])->get()
         ]);
     })->name('vantage');
+
+    Route::delete('/verticals/{vertical}/history', [VerticalController::class, 'clearHistory'])->name('verticals.history.clear');
     Route::get('/chat/suggestions', [ChatController::class, 'suggestions'])->name('chat.suggestions');
     Route::post('/chat/start', [ChatController::class, 'start'])->name('chat.start');
     Route::get('/chat/history/{conversation}', [ChatController::class, 'history'])->name('chat.history');

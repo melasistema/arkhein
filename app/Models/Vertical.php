@@ -24,4 +24,9 @@ class Vertical extends Model
     {
         return $this->belongsTo(ManagedFolder::class, 'folder_id');
     }
+
+    public function interactions(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(VantageInteraction::class);
+    }
 }

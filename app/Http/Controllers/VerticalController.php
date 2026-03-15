@@ -52,6 +52,12 @@ class VerticalController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function clearHistory(Vertical $vertical)
+    {
+        $vertical->interactions()->delete();
+        return response()->json(['success' => true]);
+    }
+
     /**
      * Trigger indexing for a specific vertical's folder.
      */
@@ -79,7 +85,25 @@ class VerticalController extends Controller
         $input = $request->input('query');
         $model = Setting::get('llm_model', config('services.ollama.model'));
 
-        // 1. Contextual Recall (Scoped to Vertical Folder)
+        // 1. Persist User Message
+        $vertical->interactions()->create([
+            'role' => 'user',
+            'content' => $input
+        ]);
+
+        // 2. Fetch Conversation History (last 10 messages for context)
+        $history = $vertical->interactions()
+            ->latest()
+            ->limit(11) // User msg + 10 previous
+            ->get()
+            ->reverse();
+
+        $historyContext = "CONVERSATION HISTORY:\n";
+        foreach ($history as $msg) {
+            $historyContext .= strtoupper($msg->role) . ": " . $msg->content . "\n";
+        }
+
+        // 3. Contextual Recall (Scoped to Vertical Folder)
         $relevantKnowledge = $knowledge->recall($input, 10, $vertical->folder_id);
         
         $context = "VERTICAL CONTEXT (Source: " . ($vertical->folder?->name ?? 'Folder') . "):\n";
@@ -87,22 +111,31 @@ class VerticalController extends Controller
             $context .= "- " . $m['content'] . "\n";
         }
 
-        // 2. Focused System Prompt (with override support)
+        // 4. Focused System Prompt
         $basePrompt = $vertical->settings['system_prompt'] ?? config('arkhein.vantage.prompts.rag_system');
 
-        $systemPrompt = $basePrompt . "\n\nContext:\n" . $context;
+        $systemPrompt = $basePrompt . "\n\n" . $context . "\n\n" . $historyContext;
 
-        $finalPrompt = "System: $systemPrompt\n\nUser: $input\nAssistant:";
+        $finalPrompt = "System: $systemPrompt\n\nAssistant:";
 
-        // 3. Generate Focused Response
+        // 5. Generate Response
         $response = $ollama->generate($model, $finalPrompt);
+        $assistantContent = $response['response'] ?? "I couldn't analyze the documents.";
+
+        // 6. Persist Assistant Response
+        $vertical->interactions()->create([
+            'role' => 'assistant',
+            'content' => $assistantContent,
+            'metadata' => [
+                'sources' => collect($relevantKnowledge)->map(fn($k) => [
+                    'filename' => $k['metadata']['filename'] ?? 'unknown'
+                ])->unique()->values()->all()
+            ]
+        ]);
 
         return response()->json([
-            'response' => $response['response'] ?? "I couldn't analyze the documents.",
-            'sources' => collect($relevantKnowledge)->map(fn($k) => [
-                'filename' => $k['metadata']['filename'] ?? 'unknown',
-                'path' => $k['metadata']['path'] ?? ''
-            ])->unique()->values()
+            'response' => $assistantContent,
+            'sources' => $vertical->interactions()->latest()->first()->metadata['sources'] ?? []
         ]);
     }
 }
