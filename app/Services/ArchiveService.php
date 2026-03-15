@@ -46,7 +46,7 @@ class ArchiveService
         $anyChanges = false;
 
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
-        $dimensions = (int) Setting::get('embedding_dimensions', 768);
+        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
 
         foreach ($files as $file) {
             if ($this->shouldIgnore($file->getRelativePathname())) continue;

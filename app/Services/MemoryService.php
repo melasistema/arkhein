@@ -27,8 +27,9 @@ class MemoryService
     /**
      * Ensure the index is ready and matched to dimensions.
      */
-    public function ensureIndex(int $dimensions = 768)
+    public function ensureIndex(?int $dimensions = null)
     {
+        $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
         Config::setDimensions($dimensions);
 
         $vectorFile = $this->storagePath . DIRECTORY_SEPARATOR . 'vector.bin';

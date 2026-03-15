@@ -17,12 +17,18 @@ import CardDescription from '@/components/ui/card/CardDescription.vue';
 import CardHeader from '@/components/ui/card/CardHeader.vue';
 import CardTitle from '@/components/ui/card/CardTitle.vue';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
-import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette } from 'lucide-vue-next';
+import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database } from 'lucide-vue-next';
 import { settings } from '@/routes';
 
 const props = defineProps<{
     models: any[];
     folders: any[];
+    is_optimized: boolean;
+    recommended: {
+        llm: string;
+        embedding: string;
+        dimensions: number;
+    };
     current: {
         llm_model: string;
         embedding_model: string;
@@ -40,8 +46,22 @@ const breadcrumbs = [
 const syncing = ref(false);
 const recentlySynced = ref(false);
 const isRebuilding = ref(false);
+const isSettingsLocked = ref(true); // Locked by default for safety
 const foldersList = ref([...props.folders]);
 const pollInterval = ref<any>(null);
+
+// Check if recommended models are present in Ollama's local tags
+const isRecommendedLLMInstalled = computed(() => {
+    return props.models.some(m => m.name === props.recommended.llm);
+});
+
+const isRecommendedEmbeddingInstalled = computed(() => {
+    return props.models.some(m => m.name === props.recommended.embedding);
+});
+
+const showOnboardingWarning = computed(() => {
+    return !isRecommendedLLMInstalled.value || !isRecommendedEmbeddingInstalled.value;
+});
 
 // Check if ANY folder is currently indexing
 const isAnyFolderIndexing = computed(() => {
@@ -50,6 +70,23 @@ const isAnyFolderIndexing = computed(() => {
 
 // The master busy state
 const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value || isRebuilding.value);
+
+const toggleLock = () => {
+    if (!isSettingsLocked.value) {
+        isSettingsLocked.value = true;
+    } else {
+        if (confirm("Advanced: Changing these settings can clear Arkhein's long-term memory. Continue?")) {
+            isSettingsLocked.value = false;
+        }
+    }
+};
+
+const optimizeConfiguration = () => {
+    form.llm_model = props.recommended.llm;
+    form.embedding_model = props.recommended.embedding;
+    form.embedding_dimensions = props.recommended.dimensions;
+    isSettingsLocked.value = false;
+};
 
 const rebuildIndex = async () => {
     if (isBusy.value) return;
@@ -182,88 +219,125 @@ const removeFolder = (id: number) => {
                 <div class="flex flex-col gap-8">
                     <Card>
                         <CardHeader>
-                            <CardTitle class="flex items-center gap-2">
-                                <Sparkles class="h-5 w-5 text-yellow-500" />
-                                AI Models
-                            </CardTitle>
+                            <div class="flex items-center justify-between">
+                                <CardTitle class="flex items-center gap-2">
+                                    <Sparkles class="h-5 w-5 text-yellow-500" />
+                                    AI Models
+                                </CardTitle>
+                                <div v-if="is_optimized" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/10 text-[10px] text-green-600 font-black uppercase tracking-tighter border border-green-500/20">
+                                    <Zap class="h-2.5 w-2.5 fill-current" />
+                                    Optimized for Arkhein
+                                </div>
+                                <div v-else @click="optimizeConfiguration" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-[10px] text-muted-foreground font-black uppercase tracking-tighter border border-border cursor-pointer hover:bg-primary/5 hover:text-primary transition-colors">
+                                    Custom Config
+                                </div>
+                            </div>
                             <CardDescription>
                                 Configure which local Ollama models Arkhein uses for conversation and memory.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
+                            <div v-if="showOnboardingWarning" class="mb-6 p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex flex-col gap-3">
+                                <div class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
+                                    <Info class="h-4 w-4" />
+                                    <span class="text-xs font-bold uppercase tracking-wider">Onboarding Recommendation</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground leading-relaxed">
+                                    For the intended experience, we recommend pulling the following models via your terminal:
+                                </p>
+                                <div class="grid grid-cols-1 gap-2">
+                                    <div v-if="!isRecommendedLLMInstalled" class="p-2 rounded-xl bg-background border border-border/50 font-mono text-[10px] flex items-center justify-between">
+                                        <span class="opacity-70">ollama pull {{ recommended.llm }}</span>
+                                        <span class="text-[9px] font-bold text-indigo-500 uppercase">Assistant</span>
+                                    </div>
+                                    <div v-if="!isRecommendedEmbeddingInstalled" class="p-2 rounded-xl bg-background border border-border/50 font-mono text-[10px] flex items-center justify-between">
+                                        <span class="opacity-70">ollama pull {{ recommended.embedding }}</span>
+                                        <span class="text-[9px] font-bold text-indigo-500 uppercase">Embedding</span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <form @submit.prevent="submit" class="space-y-6">
                                 
-                                <div v-if="isMemoryResetRequired" class="rounded-md bg-amber-50 p-4 border border-amber-200 dark:bg-amber-900/10 dark:border-amber-900/50">
-                                    <div class="flex">
-                                        <div class="flex-shrink-0">
-                                            <AlertTriangle class="h-5 w-5 text-amber-400" aria-hidden="true" />
-                                        </div>
-                                        <div class="ml-3">
-                                            <h3 class="text-sm font-medium text-amber-800 dark:text-amber-400">Memory Reset Required</h3>
-                                            <div class="mt-2 text-sm text-amber-700 dark:text-amber-500">
-                                                <p>Changing the embedding model or dimensions will clear Arkhein's current long-term memory to maintain database integrity.</p>
-                                            </div>
+                                <div v-if="isMemoryResetRequired && !isSettingsLocked" class="rounded-2xl bg-amber-500/5 p-4 border border-amber-500/20">
+                                    <div class="flex gap-3">
+                                        <AlertTriangle class="h-5 w-5 text-amber-500 shrink-0" />
+                                        <div class="space-y-1">
+                                            <h3 class="text-xs font-bold text-amber-600 uppercase">Memory Reset Required</h3>
+                                            <p class="text-[11px] text-muted-foreground leading-relaxed">Changing these settings will clear your current vector index to prevent dimension mismatch.</p>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div class="space-y-2">
-                                    <Label for="llm_model">Primary Assistant Model (LLM)</Label>
-                                    <Select v-model="form.llm_model">
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select a model" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem v-for="model in models" :key="model.name" :value="model.name">
-                                                {{ model.name }}
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <p class="text-[10px] text-muted-foreground">The model that generates chat responses.</p>
-                                </div>
-
-                                <div class="space-y-2">
-                                    <Label for="embedding_model">Embedding Model</Label>
-                                    <Select v-model="form.embedding_model">
-                                        <SelectTrigger>
-                                            <SelectValue placeholder="Select a model" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            <SelectItem v-for="model in models" :key="model.name" :value="model.name">
-                                                {{ model.name }}
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
-                                    <p class="text-[10px] text-muted-foreground">The model used to process long-term memory.</p>
-                                </div>
-
-                                <div class="space-y-2">
-                                    <Label for="embedding_dimensions" class="flex items-center gap-2">
-                                        <Ruler class="h-4 w-4" />
-                                        Embedding Dimensions
-                                    </Label>
-                                    <Input
-                                        id="embedding_dimensions"
-                                        type="number"
-                                        v-model="form.embedding_dimensions"
-                                        min="32"
-                                        max="4096"
-                                    />
-                                    <p class="text-[10px] text-muted-foreground">
-                                        Default is 768 (nomic-embed-text). Qwen3 might require custom values.
-                                    </p>
-                                </div>
-
-                                <div class="pt-4 flex items-center justify-between">
-                                    <div v-if="form.recentlySuccessful" class="text-sm text-green-600 font-medium animate-in fade-in">
-                                        Settings saved!
+                                <div class="space-y-4" :class="{ 'opacity-50 pointer-events-none select-none': isSettingsLocked }">
+                                    <div class="space-y-2">
+                                        <Label for="llm_model">Primary Assistant Model (LLM)</Label>
+                                        <Select v-model="form.llm_model">
+                                            <SelectTrigger class="rounded-xl">
+                                                <SelectValue placeholder="Select a model" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
+                                                    {{ model.name }}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p class="text-[10px] text-muted-foreground">Recommended: {{ recommended.llm }}</p>
                                     </div>
-                                    <div v-else></div>
-                                    
-                                    <Button type="submit" :disabled="form.processing">
-                                        <Save class="mr-2 h-4 w-4" />
-                                        Save Changes
-                                    </Button>
+
+                                    <div class="space-y-2">
+                                        <Label for="embedding_model">Embedding Model</Label>
+                                        <Select v-model="form.embedding_model">
+                                            <SelectTrigger class="rounded-xl">
+                                                <SelectValue placeholder="Select a model" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
+                                                    {{ model.name }}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <p class="text-[10px] text-muted-foreground">Recommended: {{ recommended.embedding }}</p>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <Label for="embedding_dimensions" class="flex items-center gap-2">
+                                            <Ruler class="h-4 w-4" />
+                                            Embedding Dimensions
+                                        </Label>
+                                        <Input
+                                            id="embedding_dimensions"
+                                            type="number"
+                                            v-model="form.embedding_dimensions"
+                                            class="rounded-xl"
+                                        />
+                                        <p class="text-[10px] text-muted-foreground">
+                                            Default for {{ recommended.embedding }} is {{ recommended.dimensions }}.
+                                        </p>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 flex items-center justify-between gap-4">
+                                    <div class="flex gap-2">
+                                        <Button type="button" variant="outline" size="sm" class="rounded-xl px-4 h-9" @click="toggleLock">
+                                            <component :is="isSettingsLocked ? Lock : Unlock" class="mr-2 h-3.5 w-3.5" />
+                                            {{ isSettingsLocked ? 'Unlock Settings' : 'Lock for Safety' }}
+                                        </Button>
+                                        
+                                        <Button v-if="!isSettingsLocked && !is_optimized" type="button" variant="ghost" size="sm" class="rounded-xl px-4 h-9 text-[10px] font-bold uppercase opacity-70 hover:opacity-100" @click="optimizeConfiguration">
+                                            Restore Defaults
+                                        </Button>
+                                    </div>
+
+                                    <div v-if="!isSettingsLocked" class="flex items-center gap-3">
+                                        <div v-if="form.recentlySuccessful" class="text-[10px] text-green-600 font-bold uppercase animate-in fade-in">
+                                            Saved!
+                                        </div>
+                                        <Button type="submit" class="rounded-xl px-6 h-9" :disabled="form.processing">
+                                            <Save class="mr-2 h-3.5 w-3.5" />
+                                            Save Changes
+                                        </Button>
+                                    </div>
                                 </div>
                             </form>
                         </CardContent>

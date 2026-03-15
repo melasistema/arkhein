@@ -17,7 +17,7 @@ class RebuildMemory extends Command
         $dimSetting = \App\Models\Setting::on('nativephp')->find('embedding_dimensions');
         $modelSetting = \App\Models\Setting::on('nativephp')->find('embedding_model');
 
-        $dimensions = (int) ($dimSetting?->value ?? 768);
+        $dimensions = (int) ($dimSetting?->value ?? config('services.ollama.embedding_dimensions'));
         $model = $modelSetting?->value ?? 'default';
         
         $this->info("Starting memory rebuild using SSOT (nativephp.sqlite)...");

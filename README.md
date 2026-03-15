@@ -13,7 +13,8 @@ Arkhein is a private-first macOS agent designed to be your strategic partner. It
 - **Source Verification:** Every answer from a Vantage card cites the specific files used as context.
 
 ### 🧠 The Mind (Intelligence & Identity)
-- **Local Sovereignty:** Powered by **Ollama**, Arkhein performs all inference and vectorization locally.
+- **Local Sovereignty:** Powered by **Ollama**. Optimized for `qwen3:8b` (Assistant) and `qwen3-embedding:4b` (Memory).
+- **Smart Onboarding:** Arkhein auto-detects recommended models and pre-configures itself for an instant start.
 - **Sovereign Directives:** Centrally managed identity and operational boundaries in `config/arkhein.php`.
 - **Fast-Path Intent:** Instant recognition of file system commands via regex bypass, reducing latency for common tasks.
 - **Asynchronous Reflection:** Heavy insight extraction and memory reconciliation run in background jobs via SQLite-backed queues.
@@ -40,11 +41,18 @@ A specialized **Pest** test suite verifies security boundaries, @mention resolut
 
 ## 🚀 Quick Setup
 
-1. **Environment:** macOS, [Ollama App](https://ollama.com/download), PHP 8.2+, Node 22+.
-2. **Install:** `composer install && npm install`
-3. **Initialize:** `php artisan migrate --database=nativephp`
-4. **Configure:** Launch the app, go to **Settings** to choose your models and authorize your first folder.
+1. **Environment:** macOS, [Ollama App](https://ollama.com/download), PHP 8.4+, Node 22+.
+2. **Prepare Models:**
+   - **The Easy Way:** Open the [Ollama Models Library](https://ollama.com/library), search for `qwen3` and `qwen3-embedding`, and follow the download instructions.
+   - **The Pro Way:** Run these in your terminal:
+     ```bash
+     ollama pull qwen3:8b
+     ollama pull qwen3-embedding:4b
+     ```
+3. **Install:** `composer install && npm install`
+4. **Initialize:** `php artisan migrate --database=nativephp`
 5. **Launch:** `npm run native:dev`
+6. **Configure:** Go to **Settings** to authorize your first folder and verify your model "Safe-Lock" status.
 
 ---
 *Arkhein: Command your Silicon. Own your Memory.*

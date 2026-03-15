@@ -68,9 +68,9 @@ class ChatController extends Controller
         $conversation = Conversation::findOrFail($conversationId);
 
         // 1. Build Context & Settings
-        $model = Setting::get('llm_model', config('services.ollama.model', 'llama3.2:1b'));
-        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model', 'nomic-embed-text:latest'));
-        $dimensions = (int) Setting::get('embedding_dimensions', 768);
+        $model = Setting::get('llm_model', config('services.ollama.model'));
+        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
+        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
 
         // 2. Vectorize and Save User Message
         $userEmbedding = $ollama->embeddings($embeddingModel, $input);

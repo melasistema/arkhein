@@ -17,13 +17,57 @@ class SettingsController extends Controller
 {
     public function index(Request $request, OllamaService $ollama)
     {
+        $models = $ollama->tags();
+        $folders = ManagedFolder::all();
+
+        // 1. Fetch Current DB Values
+        $currentLLM = Setting::get('llm_model');
+        $currentEmbedding = Setting::get('embedding_model');
+        $currentDimensions = Setting::get('embedding_dimensions');
+
+        // 2. SMART DETECTION: If settings are empty (First Run), check if recommended models are in Ollama
+        $recommendedLLM = config('services.ollama.model');
+        $recommendedEmbedding = config('services.ollama.embedding_model');
+        $recommendedDimensions = config('services.ollama.embedding_dimensions');
+
+        $isOptimized = true;
+
+        if (!$currentLLM || !$currentEmbedding) {
+            $availableModelNames = collect($models)->pluck('name')->all();
+
+            // Auto-detect LLM
+            if (in_array($recommendedLLM, $availableModelNames)) {
+                Setting::set('llm_model', $recommendedLLM);
+                $currentLLM = $recommendedLLM;
+            }
+
+            // Auto-detect Embedding
+            if (in_array($recommendedEmbedding, $availableModelNames)) {
+                Setting::set('embedding_model', $recommendedEmbedding);
+                Setting::set('embedding_dimensions', $recommendedDimensions);
+                $currentEmbedding = $recommendedEmbedding;
+                $currentDimensions = $recommendedDimensions;
+            }
+        }
+
+        // 3. Determine if the current setup matches the "Optimized" Arkhein state
+        $isOptimized = ($currentLLM === $recommendedLLM) && 
+                      ($currentEmbedding === $recommendedEmbedding) && 
+                      ((int)$currentDimensions === (int)$recommendedDimensions);
+
         $data = [
-            'models' => $ollama->tags(),
-            'folders' => ManagedFolder::all(),
+            'models' => $models,
+            'folders' => $folders,
+            'is_optimized' => $isOptimized,
+            'recommended' => [
+                'llm' => $recommendedLLM,
+                'embedding' => $recommendedEmbedding,
+                'dimensions' => $recommendedDimensions,
+            ],
             'current' => [
-                'llm_model' => Setting::get('llm_model', config('services.ollama.model')),
-                'embedding_model' => Setting::get('embedding_model', config('services.ollama.embedding_model')),
-                'embedding_dimensions' => (int) Setting::get('embedding_dimensions', 768),
+                'llm_model' => $currentLLM ?? '',
+                'embedding_model' => $currentEmbedding ?? '',
+                'embedding_dimensions' => (int) ($currentDimensions ?? $recommendedDimensions),
             ]
         ];
 
@@ -75,7 +119,7 @@ class SettingsController extends Controller
 
     public function rebuild(MemoryService $memory)
     {
-        $dimensions = (int) Setting::get('embedding_dimensions', 768);
+        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
         $memory->rebuildIndex($dimensions);
 
         return response()->json(['success' => true]);
