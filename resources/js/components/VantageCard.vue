@@ -15,6 +15,7 @@ import SelectItem from '@/components/ui/select/SelectItem.vue';
 import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
 import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue';
+import Markdown from '@/components/Markdown.vue';
 import { 
     FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
     FileText, Search, Database, HardDrive, Trash2
@@ -40,7 +41,6 @@ const scrollAreaRef = ref<any>(null);
 
 const scrollToBottom = async () => {
     await nextTick();
-    // Be more aggressive with scrolling
     setTimeout(() => {
         if (scrollAreaRef.value?.$el) {
             const viewport = scrollAreaRef.value.$el.querySelector('[data-slot="scroll-area-viewport"]');
@@ -54,12 +54,10 @@ const scrollToBottom = async () => {
     }, 100);
 };
 
-// Auto-scroll when messages update
 watch(messages, () => {
     scrollToBottom();
 }, { deep: true });
 
-// Auto-scroll when querying state changes
 watch(isQuerying, (val) => {
     if (val) scrollToBottom();
 });
@@ -105,7 +103,6 @@ const syncVertical = async () => {
     isSyncing.value = true;
     try {
         await axios.post(`/verticals/${currentVertical.value.id}/sync`);
-        // We show the spinner for a few seconds to indicate task was dispatched
         setTimeout(() => {
             isSyncing.value = false;
         }, 3000);
@@ -127,8 +124,6 @@ const sendQuery = async () => {
         const response = await axios.post(`/verticals/${currentVertical.value.id}/query`, {
             query: userMsg
         });
-        
-        console.log("Arkhein RAG Response:", response.data);
         
         messages.value.push({
             role: 'assistant',
@@ -210,22 +205,23 @@ const sendQuery = async () => {
 
             <CardContent class="flex-1 p-0 overflow-hidden relative flex flex-col min-h-0">
                 <ScrollArea ref="scrollAreaRef" class="h-full w-full">
-                    <div class="px-4 py-4 min-h-full">
+                    <div class="px-4 py-4 min-h-full flex flex-col gap-4">
                         <div v-if="messages.length === 0" class="h-32 flex flex-col items-center justify-center text-center opacity-40 mt-12">
                             <FileText class="h-8 w-8 mb-2" />
                             <p class="text-[11px] font-medium italic">Ask anything about the documents in this folder.</p>
                         </div>
                         
-                        <div v-for="(msg, idx) in messages" :key="idx" class="mb-4 flex flex-col gap-1">
+                        <div v-for="(msg, idx) in messages" :key="idx" class="flex flex-col gap-1">
                             <div class="flex items-center gap-1.5 mb-1" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
                                 <span v-if="msg.role === 'assistant'" class="text-[9px] font-bold uppercase tracking-wider opacity-30">ARKHEIN VANTAGE</span>
                                 <span v-else class="text-[9px] font-bold uppercase tracking-wider opacity-30">USER</span>
                             </div>
                             <div 
                                 class="text-xs p-3 rounded-2xl leading-relaxed"
-                                :class="msg.role === 'user' ? 'bg-primary text-primary-foreground ml-8 rounded-tr-none shadow-sm' : 'bg-muted/50 border border-border/50 mr-8 rounded-tl-none'"
+                                :class="msg.role === 'user' ? 'bg-primary text-primary-foreground ml-8 rounded-tr-none shadow-sm whitespace-pre-wrap' : 'bg-muted/50 border border-border/50 mr-8 rounded-tl-none'"
                             >
-                                {{ msg.content }}
+                                <Markdown v-if="msg.role === 'assistant'" :content="msg.content" />
+                                <template v-else>{{ msg.content }}</template>
                             </div>
                         </div>
 

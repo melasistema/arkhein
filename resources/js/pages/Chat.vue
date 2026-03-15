@@ -3,9 +3,10 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { ref, nextTick, onMounted, computed } from 'vue';
 import axios from 'axios';
-import { Button } from '@/components/ui/button';
+import Button from '@/components/ui/button/Button.vue';
 import CommandInput from '@/components/CommandInput.vue';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import Markdown from '@/components/Markdown.vue';
 import { 
     MessageSquare, Send, Bot, User, BrainCircuit, Check, X, ShieldAlert, 
     Loader2, Plus, History, ChevronRight
@@ -293,7 +294,10 @@ onMounted(checkOllamaStatus);
                                         <Bot v-else class="h-4 w-4" />
                                     </div>
                                     <div class="flex flex-col gap-3 flex-1 overflow-hidden">
-                                        <div class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</div>
+                                        <div class="whitespace-pre-wrap leading-relaxed">
+                                            <Markdown v-if="msg.role === 'assistant'" :content="msg.content" />
+                                            <template v-else>{{ msg.content }}</template>
+                                        </div>
                                         
                                         <!-- Actions -->
                                         <div v-if="msg.pending_actions && msg.pending_actions.length > 0" class="flex flex-col gap-2 mt-2">
