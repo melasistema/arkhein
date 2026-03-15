@@ -105,7 +105,11 @@ const syncVertical = async () => {
     isSyncing.value = true;
     try {
         await axios.post(`/verticals/${currentVertical.value.id}/sync`);
-    } finally {
+        // We show the spinner for a few seconds to indicate task was dispatched
+        setTimeout(() => {
+            isSyncing.value = false;
+        }, 3000);
+    } catch (e) {
         isSyncing.value = false;
     }
 };

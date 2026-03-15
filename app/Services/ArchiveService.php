@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\ManagedFolder;
 use App\Models\Setting;
+use App\Models\Knowledge;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -12,7 +13,7 @@ class ArchiveService
 {
     protected array $supportedExtensions = ['pdf', 'md', 'txt', 'php', 'js', 'ts', 'vue', 'json', 'css', 'html'];
     protected array $ignoreFolders = ['.git', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
-    protected int $chunkSize = 1000; // Characters per chunk
+    protected int $chunkSize = 1000;
 
     public function __construct(
         protected OllamaService $ollama,
@@ -22,47 +23,30 @@ class ArchiveService
     }
 
     /**
-     * Synchronize all authorized folders.
+     * Index a specific folder (Incremental by default).
      */
-    public function sync(): array
-    {
-        $folders = ManagedFolder::all();
-        $results = [
-            'total_files' => 0,
-            'indexed_chunks' => 0,
-            'folders_processed' => 0
-        ];
-
-        foreach ($folders as $folder) {
-            $report = $this->indexFolder($folder);
-            $results['total_files'] += $report['files'];
-            $results['indexed_chunks'] += $report['chunks'];
-            $results['folders_processed']++;
-            
-            $folder->update(['last_indexed_at' => now()]);
-        }
-
-        return $results;
-    }
-
-    /**
-     * Index a specific folder.
-     */
-    public function indexFolder(ManagedFolder $folder): array
+    public function indexFolder(ManagedFolder $folder, bool $forceFull = false): array
     {
         if (!File::isDirectory($folder->path)) {
             return ['files' => 0, 'chunks' => 0];
         }
 
-        // 1. Scoped Cleanse: Only remove chunks belonging to THIS folder
-        \App\Models\Knowledge::on('nativephp')
-            ->where('type', 'file')
-            ->where('metadata->folder_id', $folder->id)
-            ->delete();
+        Log::info("Arkhein: Starting " . ($forceFull ? 'FULL' : 'INCREMENTAL') . " index for @{$folder->name}");
+
+        if ($forceFull) {
+            Knowledge::on('nativephp')
+                ->where('type', 'file')
+                ->where('metadata->folder_id', $folder->id)
+                ->delete();
+        }
 
         $files = File::allFiles($folder->path);
         $indexedFiles = 0;
         $totalChunks = 0;
+        $anyChanges = false;
+
+        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
+        $dimensions = (int) Setting::get('embedding_dimensions', 768);
 
         foreach ($files as $file) {
             if ($this->shouldIgnore($file->getRelativePathname())) continue;
@@ -70,17 +54,68 @@ class ArchiveService
             $extension = strtolower($file->getExtension());
             if (!in_array($extension, $this->supportedExtensions)) continue;
 
-            $chunks = $this->processFile($file->getRealPath(), $folder->id);
-            $totalChunks += $chunks;
+            $filePath = $file->getRealPath();
+            $lastModified = $file->getMTime();
+
+            // INCREMENTAL CHECK
+            if (!$forceFull) {
+                $existing = Knowledge::on('nativephp')
+                    ->where('type', 'file')
+                    ->where('metadata->path', $filePath)
+                    ->first();
+
+                // If file exists and hasn't changed, skip it
+                if ($existing && ($existing->metadata['last_modified'] ?? 0) >= $lastModified) {
+                    continue;
+                }
+
+                // If file changed, delete its old chunks before re-indexing
+                if ($existing) {
+                    Knowledge::on('nativephp')
+                        ->where('type', 'file')
+                        ->where('metadata->path', $filePath)
+                        ->delete();
+                }
+            }
+
+            $content = $this->getContent($filePath);
+            if (empty(trim($content))) continue;
+
+            $chunks = str_split($content, $this->chunkSize);
+            
+            foreach ($chunks as $index => $chunk) {
+                $embedding = $this->ollama->embeddings($embeddingModel, $chunk);
+                
+                if ($embedding) {
+                    Knowledge::on('nativephp')->create([
+                        'id' => Str::uuid()->toString(),
+                        'type' => 'file',
+                        'content' => $this->sanitizeUtf8($chunk),
+                        'embedding' => $embedding,
+                        'metadata' => [
+                            'path' => $filePath,
+                            'filename' => $file->getFilename(),
+                            'chunk_index' => $index,
+                            'total_chunks' => count($chunks),
+                            'folder_id' => $folder->id,
+                            'last_modified' => $lastModified, // Save mtime for next incremental sync
+                        ]
+                    ]);
+                    $totalChunks++;
+                }
+            }
             $indexedFiles++;
+            $anyChanges = true;
+        }
+
+        // Only rebuild binary index if something actually changed
+        if ($anyChanges || $forceFull) {
+            $this->memory->rebuildIndex($dimensions);
         }
 
         return ['files' => $indexedFiles, 'chunks' => $totalChunks];
     }
 
-    /**
-     * Extract content based on file type.
-     */
     protected function getContent(string $path): string
     {
         $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
@@ -102,61 +137,13 @@ class ArchiveService
         return $this->sanitizeUtf8($content);
     }
 
-    /**
-     * Clean malformed UTF-8 characters.
-     */
     protected function sanitizeUtf8(string $text): string
     {
-        // 1. Convert encoding to strip invalid sequences
         $text = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
-        
-        // 2. Remove non-printable characters except basic whitespace
         $text = preg_replace('/[^\x20-\x7E\t\n\r\x{00A0}-\x{D7FF}\x{F900}-\x{FDCF}\x{FDF0}-\x{FFEF}]/u', '', $text);
-
         return trim($text);
     }
 
-    /**
-     * Chunk file content and generate embeddings.
-     */
-    protected function processFile(string $path, int $folderId): int
-    {
-        $content = $this->getContent($path);
-        if (empty(trim($content))) return 0;
-
-        // Use slightly larger chunks for document analysis if needed, 
-        // but keeping 1000 for now.
-        $chunks = str_split($content, $this->chunkSize);
-        $chunkCount = 0;
-
-        $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
-        $dimensions = (int) Setting::get('embedding_dimensions', 768);
-        $this->memory->ensureIndex($dimensions);
-
-        foreach ($chunks as $index => $chunk) {
-            $embedding = $this->ollama->embeddings($embeddingModel, $chunk);
-            
-            if ($embedding) {
-                $id = Str::uuid()->toString();
-                $metadata = [
-                    'path' => $path,
-                    'filename' => basename($path),
-                    'chunk_index' => $index,
-                    'total_chunks' => count($chunks),
-                    'folder_id' => $folderId, // CRITICAL: Tag with folder_id
-                ];
-
-                $this->memory->save($id, $chunk, $embedding, 'file', $metadata);
-                $chunkCount++;
-            }
-        }
-
-        return $chunkCount;
-    }
-
-    /**
-     * Logic to determine if a path should be ignored.
-     */
     protected function shouldIgnore(string $relativePath): bool
     {
         foreach ($this->ignoreFolders as $folder) {

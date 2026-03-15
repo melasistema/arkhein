@@ -8,5 +8,5 @@ class ManagedFolder extends Model
 {
     protected $connection = 'nativephp';
 
-    protected $fillable = ['path', 'name', 'last_indexed_at'];
+    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing'];
 }

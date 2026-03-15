@@ -7,6 +7,7 @@ use App\Models\ManagedFolder;
 use App\Services\OllamaService;
 use App\Services\MemoryService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Native\Laravel\Dialog;
 
@@ -33,10 +34,19 @@ class SettingsController extends Controller
         return Inertia::render('Settings', $data);
     }
 
-    public function sync(ArchiveService $archive)
+    public function sync()
     {
-        $results = $archive->sync();
-        return back()->with('success', "Indexed {$results['total_files']} files and generated {$results['indexed_chunks']} chunks.");
+        $folders = ManagedFolder::all();
+        
+        foreach ($folders as $folder) {
+            $folder->update(['is_indexing' => true]);
+            \App\Jobs\IndexFolderJob::dispatch($folder);
+        }
+
+        return back()->with([
+            'success' => "Indexing started for {$folders->count()} folders in the background.",
+            'folders' => ManagedFolder::all() // Push fresh state
+        ]);
     }
 
     public function addFolder()
@@ -78,11 +88,12 @@ class SettingsController extends Controller
         Setting::set('embedding_model', $request->embedding_model);
         Setting::set('embedding_dimensions', $request->embedding_dimensions);
 
-        // If embeddings changed, we MUST reset memory to avoid corruption
+        // If embeddings changed, we MUST reset memory to avoid corruption and dimension mismatch
         if ($oldModel !== $request->embedding_model || $oldDimensions !== (int) $request->embedding_dimensions) {
+            Log::info("Arkhein: Embedding settings changed. Purging existing knowledge to maintain consistency.");
             $memory->reset();
         }
 
-        return back()->with('success', 'Settings updated successfully.');
+        return back()->with('success', 'Settings updated successfully. Existing memory was purged to match new model dimensions.');
     }
 }

@@ -158,7 +158,7 @@ class MemoryService
     {
         try {
             $this->clearBinaryFiles();
-            Knowledge::on('nativephp')->truncate();
+            Knowledge::on('nativephp')->delete(); // Using delete() instead of truncate() for SQLite safety
             return true;
         } catch (\Exception $e) {
             Log::error("Failed to reset knowledge base: " . $e->getMessage());
@@ -186,15 +186,21 @@ class MemoryService
     {
         $parsed = [];
 
+        Log::debug("Arkhein Vektor: Parsing " . count($results) . " raw hits.");
+
         foreach ($results as $result) {
             $id = $result['id'];
+
+            // Vektor returns distance (usually 0 to 2 for cosine)
             $distance = $result['score'] ?? 1.0;
             $similarity = 1.0 - $distance;
+
+            Log::debug("Arkhein Vektor: Item {$id} -> Distance: {$distance}, Similarity: {$similarity}, Threshold: {$threshold}");
 
             if ($similarity < $threshold) continue;
 
             $item = Knowledge::on('nativephp')->find($id);
-            
+
             if ($item) {
                 $parsed[] = [
                     'id' => $id,
@@ -203,9 +209,12 @@ class MemoryService
                     'score' => $similarity,
                     'metadata' => $item->metadata
                 ];
+            } else {
+                Log::warning("Arkhein Vektor: Found ID {$id} in index but missing from SQLite SSOT.");
             }
         }
 
         return $parsed;
     }
+
 }

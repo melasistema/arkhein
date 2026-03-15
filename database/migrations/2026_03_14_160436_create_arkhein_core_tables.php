@@ -20,6 +20,7 @@ return new class extends Migration
             $table->id();
             $table->string('path')->unique();
             $table->string('name');
+            $table->boolean('is_indexing')->default(false);
             $table->timestamp('last_indexed_at')->nullable();
             $table->timestamps();
         });
