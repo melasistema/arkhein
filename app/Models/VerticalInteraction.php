@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class VerticalInteraction extends Model
 {
+    protected $connection = 'nativephp';
+
     protected $fillable = [
         'vertical_id',
         'role',

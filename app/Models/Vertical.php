@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 class Vertical extends Model
 {
     use HasFactory;
+
+    protected $connection = 'nativephp';
+
     protected $keyType = 'int';
     public $incrementing = true;
 

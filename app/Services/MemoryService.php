@@ -3,7 +3,7 @@
 namespace App\Services;
 
 use App\Models\Knowledge;
-use App\Models\Setting; // Added
+use App\Models\Setting;
 use Centamiv\Vektor\Core\Config;
 use Centamiv\Vektor\Services\Indexer;
 use Centamiv\Vektor\Services\Searcher;
@@ -182,14 +182,37 @@ class MemoryService
         }
     }
 
-    public function reset()
+    public function reset(): bool
     {
         try {
             $this->clearBinaryFiles();
             Knowledge::on('nativephp')->delete(); // Using delete() instead of truncate() for SQLite safety
             return true;
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error("Failed to reset knowledge base: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Purge document knowledge for a managed folder and rebuild the binary index from SSOT.
+     */
+    public function purgeFolderKnowledge(int $folderId): bool
+    {
+        try {
+            $deleted = Knowledge::on('nativephp')
+                ->where('type', 'file')
+                ->where('metadata->folder_id', $folderId)
+                ->delete();
+
+            if ($deleted === 0) {
+                return true;
+            }
+
+            $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+            return $this->rebuildIndex($dimensions);
+        } catch (\Throwable $e) {
+            Log::error("Failed to purge folder knowledge: " . $e->getMessage(), ['folder_id' => $folderId]);
             return false;
         }
     }

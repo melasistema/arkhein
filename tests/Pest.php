@@ -17,7 +17,17 @@ pest()->extend(TestCase::class)
         $this->withoutMiddleware();
 
         // The app uses a dedicated "nativephp" SQLite connection as SSOT.
-        // In tests we point it to :memory: (phpunit.xml) and ensure schema exists.
+        // Using :memory: here is unsafe because separate PDO connections can see different DBs.
+        // We force a single file-backed DB for repeatable, request-safe tests.
+        $path = database_path('nativephp-testing.sqlite');
+        if (! file_exists($path)) {
+            touch($path);
+        }
+
+        config(['database.connections.nativephp.database' => $path]);
+        DB::purge('nativephp');
+        DB::reconnect('nativephp');
+
         $this->artisan('migrate', ['--database' => 'nativephp']);
 
         // RefreshDatabase only resets the default connection.

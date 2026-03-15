@@ -10,6 +10,8 @@ class HelpSession extends Model
 {
     use HasUuids;
 
+    protected $connection = 'nativephp';
+
     protected $fillable = ['title', 'summary', 'embedding', 'metadata'];
 
     protected $casts = [

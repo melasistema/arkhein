@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Vertical;
 use App\Models\Setting;
 use App\Models\ManagedFolder;
+use App\Services\MemoryService;
 use App\Services\OllamaService;
 use App\Services\RagService; // Updated
 use Illuminate\Http\Request;
@@ -33,11 +34,13 @@ class VerticalController extends Controller
         return response()->json($vertical);
     }
 
-    public function update(Request $request, Vertical $vertical)
+    public function update(Request $request, string $verticalId)
     {
+        $vertical = Vertical::findOrFail($verticalId);
+
         $validated = $request->validate([
             'name' => 'string|max:255',
-            'settings' => 'array'
+            'settings' => 'array',
         ]);
 
         $vertical->update($validated);
@@ -45,24 +48,43 @@ class VerticalController extends Controller
         return response()->json($vertical);
     }
 
-    public function destroy(Vertical $vertical)
+    public function destroy(string $verticalId, MemoryService $memory)
     {
+        $vertical = Vertical::findOrFail($verticalId);
+        $folderId = $vertical->folder_id;
+
         $vertical->delete();
+
+        // If this card was the last one pointing at a folder, purge its document knowledge.
+        // This keeps SQLite (SSOT) and Vektor (disposable index) free of orphan data.
+        if ($folderId) {
+            $stillReferenced = Vertical::where('folder_id', $folderId)->exists();
+
+            if (! $stillReferenced) {
+                $memory->purgeFolderKnowledge((int) $folderId);
+            }
+        }
+
         return response()->json(['success' => true]);
     }
 
-    public function clearHistory(Vertical $vertical)
+    public function clearHistory(string $verticalId)
     {
+        $vertical = Vertical::findOrFail($verticalId);
+
         $vertical->interactions()->delete();
+
         return response()->json(['success' => true]);
     }
 
     /**
      * Trigger indexing for a specific vertical's folder.
      */
-    public function sync(Vertical $vertical)
+    public function sync(string $verticalId)
     {
-        if (!$vertical->folder_id) {
+        $vertical = Vertical::findOrFail($verticalId);
+
+        if (! $vertical->folder_id) {
             return response()->json(['success' => false, 'error' => 'No folder associated with this vertical.'], 400);
         }
 
@@ -71,7 +93,7 @@ class VerticalController extends Controller
 
         return response()->json([
             'success' => true,
-            'message' => 'Indexing started in the background.'
+            'message' => 'Indexing started in the background.',
         ]);
     }
 
