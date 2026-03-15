@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
 import axios from 'axios';
-import AppLayout from '@/layouts/AppLayout.vue';
-import VantageCard from '@/components/VantageCard.vue';
-import type { BreadcrumbItem } from '@/types';
-import Button from '@/components/ui/button/Button.vue';
 import { Plus, LayoutDashboard } from 'lucide-vue-next';
+import { ref, onMounted } from 'vue';
+import Button from '@/components/ui/button/Button.vue';
+import VantageCard from '@/components/VantageCard.vue';
+import AppLayout from '@/layouts/AppLayout.vue';
+import type { BreadcrumbItem } from '@/types';
 
 const props = defineProps<{
     verticals: any[];

@@ -1,25 +1,25 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick, watch } from 'vue';
 import axios from 'axios';
+import { 
+    FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
+    FileText, Search, Database, HardDrive, Trash2, Eraser
+} from 'lucide-vue-next';
+import { ref, onMounted, nextTick, watch } from 'vue';
+import Markdown from '@/components/Markdown.vue';
+import Button from '@/components/ui/button/Button.vue';
 import Card from '@/components/ui/card/Card.vue';
+import CardContent from '@/components/ui/card/CardContent.vue';
+import CardDescription from '@/components/ui/card/CardDescription.vue';
+import CardFooter from '@/components/ui/card/CardFooter.vue';
 import CardHeader from '@/components/ui/card/CardHeader.vue';
 import CardTitle from '@/components/ui/card/CardTitle.vue';
-import CardDescription from '@/components/ui/card/CardDescription.vue';
-import CardContent from '@/components/ui/card/CardContent.vue';
-import CardFooter from '@/components/ui/card/CardFooter.vue';
-import Button from '@/components/ui/button/Button.vue';
 import Input from '@/components/ui/input/Input.vue';
+import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue';
 import Select from '@/components/ui/select/Select.vue';
 import SelectContent from '@/components/ui/select/SelectContent.vue';
 import SelectItem from '@/components/ui/select/SelectItem.vue';
 import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
-import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue';
-import Markdown from '@/components/Markdown.vue';
-import { 
-    FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
-    FileText, Search, Database, HardDrive, Trash2, Eraser
-} from 'lucide-vue-next';
 
 const props = defineProps<{
     vertical?: any;
@@ -41,10 +41,16 @@ const sources = ref<any[]>([]);
 const scrollAreaRef = ref<any>(null);
 
 const clearHistory = async () => {
-    if (!currentVertical.value || isClearing.value) return;
-    if (!confirm('Clear all conversation history for this Vantage card?')) return;
+    if (!currentVertical.value || isClearing.value) {
+return;
+}
+
+    if (!confirm('Clear all conversation history for this Vantage card?')) {
+return;
+}
     
     isClearing.value = true;
+
     try {
         await axios.delete(`/verticals/${currentVertical.value.id}/history`);
         messages.value = [];
@@ -61,6 +67,7 @@ const scrollToBottom = async () => {
     setTimeout(() => {
         if (scrollAreaRef.value?.$el) {
             const viewport = scrollAreaRef.value.$el.querySelector('[data-slot="scroll-area-viewport"]');
+
             if (viewport) {
                 viewport.scrollTo({
                     top: viewport.scrollHeight,
@@ -76,15 +83,24 @@ watch(messages, () => {
 }, { deep: true });
 
 watch(isQuerying, (val) => {
-    if (val) scrollToBottom();
+    if (val) {
+scrollToBottom();
+}
 });
 
 const createVertical = async () => {
-    if (!selectedFolderId.value) return;
+    if (!selectedFolderId.value) {
+return;
+}
+
     isCreating.value = true;
+
     try {
         const folder = props.managedFolders.find(f => f.id.toString() === selectedFolderId.value);
-        if (!folder) return;
+
+        if (!folder) {
+return;
+}
 
         const response = await axios.post('/verticals', {
             name: `${folder.name} Vantage`,
@@ -103,8 +119,13 @@ const createVertical = async () => {
 };
 
 const deleteVertical = async () => {
-    if (!currentVertical.value) return;
-    if (!confirm('Are you sure you want to remove this Vantage card?')) return;
+    if (!currentVertical.value) {
+return;
+}
+
+    if (!confirm('Are you sure you want to remove this Vantage card?')) {
+return;
+}
     
     try {
         await axios.delete(`/verticals/${currentVertical.value.id}`);
@@ -116,8 +137,12 @@ const deleteVertical = async () => {
 };
 
 const syncVertical = async () => {
-    if (!currentVertical.value) return;
+    if (!currentVertical.value) {
+return;
+}
+
     isSyncing.value = true;
+
     try {
         await axios.post(`/verticals/${currentVertical.value.id}/sync`);
         setTimeout(() => {
@@ -129,7 +154,9 @@ const syncVertical = async () => {
 };
 
 const sendQuery = async () => {
-    if (!query.value.trim() || isQuerying.value) return;
+    if (!query.value.trim() || isQuerying.value) {
+return;
+}
     
     const userMsg = query.value;
     messages.value.push({ role: 'user', content: userMsg });

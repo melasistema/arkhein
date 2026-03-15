@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import AppLayout from '@/layouts/AppLayout.vue';
 import { Head } from '@inertiajs/vue3';
-import { ref, nextTick, onMounted } from 'vue';
 import axios from 'axios';
-import Button from '@/components/ui/button/Button.vue';
-import Markdown from '@/components/Markdown.vue';
 import { 
     Send, Bot, User, HelpCircle,
     Loader2, Sparkles, Eraser
 } from 'lucide-vue-next';
+import { ref, nextTick, onMounted } from 'vue';
+import Markdown from '@/components/Markdown.vue';
+import Button from '@/components/ui/button/Button.vue';
 import { Input } from '@/components/ui/input';
+import AppLayout from '@/layouts/AppLayout.vue';
 
 const props = defineProps<{
     session: any;
@@ -45,13 +45,16 @@ const checkOllamaStatus = async () => {
 
 const scrollToBottom = async () => {
     await nextTick();
+
     if (scrollAreaRef.value) {
         scrollAreaRef.value.scrollTop = scrollAreaRef.value.scrollHeight;
     }
 };
 
 const sendMessage = async () => {
-    if (!newMessage.value.trim() || isLoading.value) return;
+    if (!newMessage.value.trim() || isLoading.value) {
+return;
+}
 
     const userContent = newMessage.value;
     interactions.value.push({ role: 'user', content: userContent });
@@ -81,10 +84,16 @@ const sendMessage = async () => {
 };
 
 const clearHistory = async () => {
-    if (isClearing.value) return;
-    if (!confirm("Clear all help interaction history?")) return;
+    if (isClearing.value) {
+return;
+}
+
+    if (!confirm("Clear all help interaction history?")) {
+return;
+}
 
     isClearing.value = true;
+
     try {
         // We'll use a generic clear for the help module
         await axios.post('/help/clear');

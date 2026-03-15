@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Head } from '@inertiajs/vue3';
+import { Link } from '@inertiajs/vue3';
+import { LayoutGrid, Database, FolderSearch, BrainCircuit, ChevronRight } from 'lucide-vue-next';
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
-import { LayoutGrid, Database, FolderSearch, BrainCircuit, ChevronRight } from 'lucide-vue-next';
-import { Link } from '@inertiajs/vue3';
 
 defineProps<{
     stats: {

@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import AppLayout from '@/layouts/AppLayout.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { ref, computed, onMounted, onUnmounted } from 'vue';
 import axios from 'axios';
+import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database } from 'lucide-vue-next';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import AppearanceTabs from '@/components/AppearanceTabs.vue';
 import Button from '@/components/ui/button/Button.vue';
+import Card from '@/components/ui/card/Card.vue';
+import CardContent from '@/components/ui/card/CardContent.vue';
+import CardDescription from '@/components/ui/card/CardDescription.vue';
+import CardHeader from '@/components/ui/card/CardHeader.vue';
+import CardTitle from '@/components/ui/card/CardTitle.vue';
 import Input from '@/components/ui/input/Input.vue';
 import Label from '@/components/ui/label/Label.vue';
 import Select from '@/components/ui/select/Select.vue';
@@ -11,13 +17,7 @@ import SelectContent from '@/components/ui/select/SelectContent.vue';
 import SelectItem from '@/components/ui/select/SelectItem.vue';
 import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
-import Card from '@/components/ui/card/Card.vue';
-import CardContent from '@/components/ui/card/CardContent.vue';
-import CardDescription from '@/components/ui/card/CardDescription.vue';
-import CardHeader from '@/components/ui/card/CardHeader.vue';
-import CardTitle from '@/components/ui/card/CardTitle.vue';
-import AppearanceTabs from '@/components/AppearanceTabs.vue';
-import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database } from 'lucide-vue-next';
+import AppLayout from '@/layouts/AppLayout.vue';
 import { settings } from '@/routes';
 
 const props = defineProps<{
@@ -89,9 +89,12 @@ const optimizeConfiguration = () => {
 };
 
 const rebuildIndex = async () => {
-    if (isBusy.value) return;
+    if (isBusy.value) {
+return;
+}
     
     isRebuilding.value = true;
+
     try {
         await axios.post('/settings/rebuild');
         // We show it's done after a short delay since it's background or fast
@@ -120,7 +123,10 @@ const pollStatus = async () => {
 };
 
 const startPolling = () => {
-    if (pollInterval.value) return;
+    if (pollInterval.value) {
+return;
+}
+
     pollInterval.value = setInterval(pollStatus, 3000);
 };
 
@@ -159,7 +165,9 @@ const submit = () => {
 };
 
 const syncFolders = () => {
-    if (isBusy.value) return;
+    if (isBusy.value) {
+return;
+}
 
     syncing.value = true;
     useForm({}).post('/settings/sync', {
@@ -187,7 +195,10 @@ const addFolder = () => {
 };
 
 const removeFolder = (id: number) => {
-    if (isBusy.value) return;
+    if (isBusy.value) {
+return;
+}
+
     useForm({}).delete(`/settings/folders/${id}`, {
         preserveScroll: true,
         onFinish: () => {

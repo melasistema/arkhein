@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
-import { Input } from '@/components/ui/input';
 import { Folder, FileText, Terminal, HelpCircle, ChevronRight } from 'lucide-vue-next';
+import { ref, computed, watch, nextTick } from 'vue';
+import { Input } from '@/components/ui/input';
 
 const props = defineProps<{
     modelValue: string;
@@ -34,7 +34,9 @@ const commands = [
  * Sync logic
  */
 watch(() => props.modelValue, (v) => {
-    if (v !== localValue.value) localValue.value = v;
+    if (v !== localValue.value) {
+localValue.value = v;
+}
 });
 
 watch(localValue, (v) => {
@@ -45,7 +47,10 @@ watch(localValue, (v) => {
  * Lifecycle & Data Fetching
  */
 const loadSuggestions = async () => {
-    if (suggestions.value.length > 0) return;
+    if (suggestions.value.length > 0) {
+return;
+}
+
     try {
         const response = await axios.get('/chat/suggestions');
         suggestions.value = response.data.items;
@@ -79,7 +84,10 @@ const filteredItems = computed(() => {
 const handleValueUpdate = (value: string) => {
     // We need the raw input element for selection start
     const el = document.getElementById('arkhein-shell-input') as HTMLInputElement;
-    if (!el) return;
+
+    if (!el) {
+return;
+}
 
     const pos = el.selectionStart || 0;
     const charBefore = value[pos - 1];
@@ -149,18 +157,22 @@ const handleKeydown = (e: KeyboardEvent) => {
         if (e.key === 'ArrowDown') {
             e.preventDefault();
             selectedIndex.value = (selectedIndex.value + 1) % filteredItems.value.length;
+
             return;
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
             selectedIndex.value = (selectedIndex.value - 1 + filteredItems.value.length) % filteredItems.value.length;
+
             return;
         } else if (e.key === 'Enter' || e.key === 'Tab') {
             e.preventDefault();
             selectItem(filteredItems.value[selectedIndex.value]);
+
             return;
         } else if (e.key === 'Escape') {
             e.preventDefault();
             closePopup();
+
             return;
         }
     }
