@@ -2,7 +2,8 @@
 import axios from 'axios';
 import { 
     FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
-    FileText, Search, Database, HardDrive, Trash2, Eraser
+    FileText, Search, Database, HardDrive, Trash2, Eraser,
+    Folder, CheckCircle, ExternalLink
 } from 'lucide-vue-next';
 import { ref, onMounted, nextTick, watch } from 'vue';
 import Markdown from '@/components/Markdown.vue';
@@ -20,6 +21,7 @@ import SelectContent from '@/components/ui/select/SelectContent.vue';
 import SelectItem from '@/components/ui/select/SelectItem.vue';
 import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
+import CommandInput from '@/components/CommandInput.vue';
 
 const props = defineProps<{
     vertical?: any;
@@ -38,19 +40,96 @@ const isClearing = ref(false);
 const query = ref('');
 const messages = ref<any[]>(props.vertical?.interactions ? [...props.vertical.interactions].reverse() : []);
 const sources = ref<any[]>([]);
+const isExecutingAction = ref<Record<string, boolean>>({});
 const scrollAreaRef = ref<any>(null);
 
-const clearHistory = async () => {
-    if (!currentVertical.value || isClearing.value) {
-return;
-}
-
-    if (!confirm('Clear all conversation history for this Vantage card?')) {
-return;
-}
+const getActions = (msg: any) => {
+    // Priority 1: Direct property (for new messages)
+    if (msg.pending_actions && Array.isArray(msg.pending_actions)) return msg.pending_actions;
     
-    isClearing.value = true;
+    // Priority 2: Parsed metadata (for historical messages)
+    if (!msg.metadata) return [];
+    
+    let meta = msg.metadata;
+    try {
+        // Double-string recursive parsing for SQLite robustness
+        while (typeof meta === 'string') {
+            meta = JSON.parse(meta);
+        }
+        return (meta && Array.isArray(meta.pending_actions)) ? meta.pending_actions : [];
+    } catch (e) {
+        return [];
+    }
+};
 
+const getPendingCount = (msg: any) => {
+    return getActions(msg).filter((a: any) => a.status !== 'executed').length;
+};
+
+const getReasoning = (msg: any) => {
+    if (!msg.metadata) return null;
+    let meta = msg.metadata;
+    try {
+        while (typeof meta === 'string') meta = JSON.parse(meta);
+        return meta.reasoning || null;
+    } catch (e) {
+        return null;
+    }
+};
+
+const confirmAction = async (interaction: any, action: any) => {
+    const actionKey = action.id;
+    if (isExecutingAction.value[actionKey]) return;
+
+    isExecutingAction.value[actionKey] = true;
+
+    try {
+        const response = await axios.post(`/verticals/${currentVertical.value.id}/action`, {
+            type: action.type,
+            params: action.params
+        });
+
+        if (response.data.success) {
+            action.status = 'executed';
+            // Update metadata for persistence
+            let meta = typeof interaction.metadata === 'string' ? JSON.parse(interaction.metadata) : interaction.metadata;
+            if (meta && meta.pending_actions) {
+                meta.pending_actions = meta.pending_actions.map((a: any) => 
+                    a.id === action.id ? { ...a, status: 'executed' } : a
+                );
+                interaction.metadata = meta;
+            }
+            // Update direct property for immediate UI
+            if (interaction.pending_actions) {
+                interaction.pending_actions = interaction.pending_actions.map((a: any) => 
+                    a.id === action.id ? { ...a, status: 'executed' } : a
+                );
+            }
+        } else {
+            const errorMsg = response.data.error || `Action failed for: ${action.description}. Check macOS permissions for this folder.`;
+            alert(errorMsg);
+        }
+    } catch (e) {
+        console.error("Action execution failed", e);
+        alert('Action execution failed.');
+    } finally {
+        isExecutingAction.value[actionKey] = false;
+    }
+};
+
+const confirmAll = async (interaction: any) => {
+    const actions = getActions(interaction).filter(a => a.status !== 'executed');
+    if (actions.length === 0) return;
+
+    for (const action of actions) {
+        await confirmAction(interaction, action);
+    }
+};
+
+const clearHistory = async () => {
+    if (!currentVertical.value || isClearing.value) return;
+    if (!confirm('Clear all conversation history for this Vantage card?')) return;
+    isClearing.value = true;
     try {
         await axios.delete(`/verticals/${currentVertical.value.id}/history`);
         messages.value = [];
@@ -67,41 +146,22 @@ const scrollToBottom = async () => {
     setTimeout(() => {
         if (scrollAreaRef.value?.$el) {
             const viewport = scrollAreaRef.value.$el.querySelector('[data-slot="scroll-area-viewport"]');
-
             if (viewport) {
-                viewport.scrollTo({
-                    top: viewport.scrollHeight,
-                    behavior: 'smooth'
-                });
+                viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
             }
         }
     }, 100);
 };
 
-watch(messages, () => {
-    scrollToBottom();
-}, { deep: true });
-
-watch(isQuerying, (val) => {
-    if (val) {
-scrollToBottom();
-}
-});
+watch(messages, () => { scrollToBottom(); }, { deep: true });
+watch(isQuerying, (val) => { if (val) scrollToBottom(); });
 
 const createVertical = async () => {
-    if (!selectedFolderId.value) {
-return;
-}
-
+    if (!selectedFolderId.value) return;
     isCreating.value = true;
-
     try {
         const folder = props.managedFolders.find(f => f.id.toString() === selectedFolderId.value);
-
-        if (!folder) {
-return;
-}
-
+        if (!folder) return;
         const response = await axios.post('/verticals', {
             name: `${folder.name} Vantage`,
             folder_id: folder.id,
@@ -119,14 +179,8 @@ return;
 };
 
 const deleteVertical = async () => {
-    if (!currentVertical.value) {
-return;
-}
-
-    if (!confirm('Are you sure you want to remove this Vantage card?')) {
-return;
-}
-    
+    if (!currentVertical.value) return;
+    if (!confirm('Are you sure you want to remove this Vantage card?')) return;
     try {
         await axios.delete(`/verticals/${currentVertical.value.id}`);
         emit('deleted', currentVertical.value.id);
@@ -137,27 +191,18 @@ return;
 };
 
 const syncVertical = async () => {
-    if (!currentVertical.value) {
-return;
-}
-
+    if (!currentVertical.value) return;
     isSyncing.value = true;
-
     try {
         await axios.post(`/verticals/${currentVertical.value.id}/sync`);
-        setTimeout(() => {
-            isSyncing.value = false;
-        }, 3000);
+        setTimeout(() => { isSyncing.value = false; }, 3000);
     } catch (e) {
         isSyncing.value = false;
     }
 };
 
 const sendQuery = async () => {
-    if (!query.value.trim() || isQuerying.value) {
-return;
-}
-    
+    if (!query.value.trim() || isQuerying.value) return;
     const userMsg = query.value;
     messages.value.push({ role: 'user', content: userMsg });
     query.value = '';
@@ -169,16 +214,20 @@ return;
             query: userMsg
         });
         
-        messages.value.push({
-            role: 'assistant',
-            content: response.data.response
-        });
-        sources.value = response.data.sources;
+        if (response.data.interaction) {
+            const interaction = response.data.interaction;
+            // Inject direct content and actions for 100% reactivity
+            if (response.data.response) interaction.content = response.data.response;
+            if (response.data.pending_actions) {
+                interaction.pending_actions = response.data.pending_actions;
+            }
+            console.log("Arkhein UI: Received Full Payload", interaction);
+            messages.value.push(interaction);
+        }
+        sources.value = response.data.sources || [];
     } catch (e) {
-        messages.value.push({
-            role: 'assistant',
-            content: "Analysis failed. Ensure the folder is indexed."
-        });
+        console.error("Arkhein Query Error", e);
+        messages.value.push({ role: 'assistant', content: "Analysis failed. Ensure the folder is indexed." });
     } finally {
         isQuerying.value = false;
         scrollToBottom();
@@ -187,42 +236,44 @@ return;
 </script>
 
 <template>
-    <Card class="flex flex-col h-[520px] shadow-sm border-sidebar-border/70 dark:border-sidebar-border transition-all hover:border-primary/20 bg-card overflow-hidden">
+    <Card class="flex flex-col h-[520px] shadow-sm border-sidebar-border/70 dark:border-sidebar-border transition-all hover:border-primary/20 bg-card overflow-visible">
         <!-- 1. Selection State -->
         <template v-if="!currentVertical">
-            <CardHeader>
-                <CardTitle class="flex items-center gap-2 text-base">
-                    <Database class="h-4 w-4 text-primary" />
-                    Initialize Vantage
-                </CardTitle>
-                <CardDescription class="text-xs">Connect a folder for deep document analysis.</CardDescription>
-            </CardHeader>
-            <CardContent class="flex-1 flex flex-col items-center justify-center gap-4 text-center">
-                <div class="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-2">
-                    <FolderSearch class="h-6 w-6 opacity-20" />
-                </div>
-                <Select v-model="selectedFolderId">
-                    <SelectTrigger class="w-full max-w-[200px] h-9 text-xs">
-                        <SelectValue placeholder="Select Folder" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem v-for="folder in managedFolders" :key="folder.id" :value="folder.id.toString()">
-                            {{ folder.name }}
-                        </SelectItem>
-                    </SelectContent>
-                </Select>
-            </CardContent>
-            <CardFooter>
-                <Button class="w-full h-9 text-xs" :disabled="!selectedFolderId || isCreating" @click="createVertical">
-                    <Loader2 v-if="isCreating" class="mr-2 h-3.5 w-3.5 animate-spin" />
-                    Deploy Vertical
-                </Button>
-            </CardFooter>
+            <div class="overflow-hidden flex flex-col h-full">
+                <CardHeader>
+                    <CardTitle class="flex items-center gap-2 text-base">
+                        <Database class="h-4 w-4 text-primary" />
+                        Initialize Vantage
+                    </CardTitle>
+                    <CardDescription class="text-xs">Connect a folder for deep document analysis.</CardDescription>
+                </CardHeader>
+                <CardContent class="flex-1 flex flex-col items-center justify-center gap-4 text-center">
+                    <div class="h-12 w-12 rounded-full bg-muted/50 flex items-center justify-center mb-2">
+                        <FolderSearch class="h-6 w-6 opacity-20" />
+                    </div>
+                    <Select v-model="selectedFolderId">
+                        <SelectTrigger class="w-full max-w-[200px] h-9 text-xs">
+                            <SelectValue placeholder="Select Folder" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem v-for="folder in managedFolders" :key="folder.id" :value="folder.id.toString()">
+                                {{ folder.name }}
+                            </SelectItem>
+                        </SelectContent>
+                    </Select>
+                </CardContent>
+                <CardFooter>
+                    <Button class="w-full h-9 text-xs" :disabled="!selectedFolderId || isCreating" @click="createVertical">
+                        <Loader2 v-if="isCreating" class="mr-2 h-3.5 w-3.5 animate-spin" />
+                        Deploy Vertical
+                    </Button>
+                </CardFooter>
+            </div>
         </template>
 
         <!-- 2. Active State -->
         <template v-else>
-            <CardHeader class="pb-3 border-b bg-muted/10 shrink-0">
+            <CardHeader class="pb-3 border-b bg-muted/10 shrink-0 rounded-t-xl overflow-hidden">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-2 overflow-hidden">
                         <div class="p-1.5 rounded-lg bg-primary/10">
@@ -258,7 +309,7 @@ return;
                             <p class="text-[11px] font-medium italic">Ask anything about the documents in this folder.</p>
                         </div>
                         
-                        <div v-for="(msg, idx) in messages" :key="idx" class="flex flex-col gap-1">
+                        <div v-for="(msg, idx) in messages" :key="msg.id || idx" class="flex flex-col gap-1">
                             <div class="flex items-center gap-1.5 mb-1" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
                                 <span v-if="msg.role === 'assistant'" class="text-[9px] font-bold uppercase tracking-wider opacity-30">ARKHEIN VANTAGE</span>
                                 <span v-else class="text-[9px] font-bold uppercase tracking-wider opacity-30">USER</span>
@@ -269,6 +320,68 @@ return;
                             >
                                 <Markdown v-if="msg.role === 'assistant'" :content="msg.content" />
                                 <template v-else>{{ msg.content }}</template>
+
+                                <!-- Pending Actions UI -->
+                                <div v-if="msg.role === 'assistant' && getActions(msg).length > 0" class="mt-4 flex flex-col gap-2">
+                                    <!-- Reasoning Block -->
+                                    <div v-if="getReasoning(msg)" class="mb-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/10 text-[10px] italic opacity-80 leading-relaxed">
+                                        <span class="font-bold uppercase not-italic text-[8px] opacity-50 block mb-1">Strategist Reasoning</span>
+                                        {{ getReasoning(msg) }}
+                                    </div>
+
+                                    <!-- Bulk Action Header -->
+                                    <div v-if="getPendingCount(msg) > 1" class="flex items-center justify-between mb-2 px-2 py-1.5 rounded-lg bg-primary/5 border border-primary/10">
+                                        <div class="flex items-center gap-2">
+                                            <div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
+                                            <span class="text-[10px] font-bold uppercase tracking-wider text-primary/80">
+                                                {{ getPendingCount(msg) }} Operations Pending
+                                            </span>
+                                        </div>
+                                        <Button 
+                                            size="sm" 
+                                            variant="default" 
+                                            class="h-7 text-[10px] px-4 font-bold shadow-sm"
+                                            @click="confirmAll(msg)"
+                                        >
+                                            Confirm All
+                                        </Button>
+                                    </div>
+
+                                    <div v-for="(action, aIdx) in getActions(msg)" :key="action.id || aIdx" 
+                                        class="flex flex-col p-2 rounded-xl bg-background/50 border border-border/40 shadow-sm"
+                                        :class="{ 'opacity-40 grayscale-[0.5]': action.status === 'executed' }"
+                                    >
+                                        <div class="flex items-center justify-between gap-3">
+                                            <div class="flex items-center gap-2 overflow-hidden">
+                                                <div class="p-1.5 rounded-lg bg-primary/10">
+                                                    <Folder v-if="action.type === 'create_folder'" class="h-3 w-3 text-primary" />
+                                                    <FileText v-else-if="action.type === 'create_file'" class="h-3 w-3 text-primary" />
+                                                    <ExternalLink v-else class="h-3 w-3 text-primary" />
+                                                </div>
+                                                <div class="flex flex-col overflow-hidden">
+                                                    <span class="text-[10px] font-bold opacity-80 uppercase tracking-tight">{{ action.type.replace('_', ' ') }}</span>
+                                                    <span class="text-[9px] truncate opacity-60">{{ action.description }}</span>
+                                                </div>
+                                            </div>
+                                            
+                                            <Button 
+                                                v-if="action.status !== 'executed'"
+                                                size="sm" 
+                                                variant="outline" 
+                                                class="h-7 text-[10px] px-3 font-bold border-primary/20 hover:bg-primary/5 text-primary"
+                                                :disabled="isExecutingAction[action.id]"
+                                                @click="confirmAction(msg, action)"
+                                            >
+                                                <Loader2 v-if="isExecutingAction[action.id]" class="mr-1.5 h-3 w-3 animate-spin" />
+                                                Confirm
+                                            </Button>
+                                            <div v-else class="flex items-center gap-1.5 text-green-500 px-2">
+                                                <CheckCircle class="h-3.5 w-3.5" />
+                                                <span class="text-[10px] font-bold uppercase tracking-widest">Done</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -290,12 +403,11 @@ return;
 
             <CardFooter class="p-3 border-t bg-background shrink-0">
                 <div class="flex w-full items-center gap-2">
-                    <Input 
+                    <CommandInput 
                         v-model="query" 
-                        placeholder="Query documents..." 
-                        class="h-8 text-xs rounded-lg bg-muted/20 border-none shadow-none focus-visible:ring-1 focus-visible:ring-primary/20"
-                        @keydown.enter="sendQuery"
+                        placeholder="Query documents... (try /help)" 
                         :disabled="isQuerying"
+                        @submit="sendQuery"
                     />
                     <Button size="icon" class="h-8 w-8 shrink-0 rounded-lg shadow-sm" @click="sendQuery" :disabled="!query.trim() || isQuerying">
                         <Send class="h-3.5 w-3.5" />

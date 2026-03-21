@@ -145,7 +145,7 @@ return [
         'default' => [
             'queues' => ['default'],
             'memory_limit' => 128,
-            'timeout' => 60,
+            'timeout' => 300,
             'sleep' => 3,
         ],
     ],

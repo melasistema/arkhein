@@ -22,7 +22,7 @@ class OllamaService
     {
         $settingModel = Setting::get('llm_model');
         $configModel = config('services.ollama.model');
-        $selectedModel = $model ?? $settingModel ?? $configModel; // Correct fallback order
+        $selectedModel = $model ?? $settingModel ?? $configModel;
 
         Log::debug("OllamaService: Generating with model selection", [
             'explicit_model_arg' => $model,
@@ -32,8 +32,8 @@ class OllamaService
         ]);
         
         if (empty($selectedModel)) {
-            Log::error("Ollama generate failed: No LLM model configured or provided from Settings or config.");
-            return "I am currently unable to reach the inference engine. No model configured.";
+            Log::error("Ollama generate failed: No LLM model configured.");
+            return "Inference engine unreachable. Check configuration.";
         }
 
         $payload = [
@@ -42,12 +42,10 @@ class OllamaService
             'stream' => false,
         ];
 
-        // Format (e.g. 'json')
         if (isset($options['format'])) {
             $payload['format'] = $options['format'];
         }
 
-        // Internal Ollama Model Options
         if (isset($options['options'])) {
             $payload['options'] = $options['options'];
         }
@@ -57,10 +55,44 @@ class OllamaService
 
         if ($response->failed()) {
             Log::error("Ollama generate failed: " . $response->body());
-            return "I am currently unable to reach the inference engine. Please check the system log.";
+            return "Inference engine failed. Check system log.";
         }
 
-        return $response->json('response') ?? "I am currently unable to reach the inference engine. Please check the system log.";
+        return $response->json('response') ?? "Inference engine returned an empty response.";
+    }
+
+    /**
+     * Generate a response using the Chat API.
+     */
+    public function chat(array $messages, ?string $model = null, array $options = []): string
+    {
+        $settingModel = Setting::get('llm_model');
+        $configModel = config('services.ollama.model');
+        $selectedModel = $model ?? $settingModel ?? $configModel;
+
+        if (empty($selectedModel)) {
+            Log::error("Ollama chat failed: No LLM model configured.");
+            return "Inference engine unreachable. Check configuration.";
+        }
+
+        $payload = [
+            'model' => $selectedModel,
+            'messages' => $messages,
+            'stream' => false,
+        ];
+
+        if (isset($options['format'])) $payload['format'] = $options['format'];
+        if (isset($options['options'])) $payload['options'] = $options['options'];
+
+        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $response = Http::timeout($timeout)->post("{$this->host}/api/chat", $payload);
+
+        if ($response->failed()) {
+            Log::error("Ollama chat failed: " . $response->body());
+            return "Inference engine failed. Check system log.";
+        }
+
+        return $response->json('message.content') ?? "Inference engine returned an empty response.";
     }
 
     /**
@@ -70,7 +102,7 @@ class OllamaService
     {
         $settingModel = Setting::get('embedding_model');
         $configModel = config('services.ollama.embedding_model');
-        $selectedModel = $model ?? $settingModel ?? $configModel; // Correct fallback order
+        $selectedModel = $model ?? $settingModel ?? $configModel;
 
         Log::debug("OllamaService: Getting embeddings with model selection", [
             'explicit_model_arg' => $model,
@@ -80,7 +112,7 @@ class OllamaService
         ]);
 
         if (empty($selectedModel)) {
-            Log::error("Ollama embeddings failed: No embedding model configured or provided from Settings or config.");
+            Log::error("Ollama embeddings failed: No embedding model configured.");
             return null;
         }
 
@@ -119,7 +151,6 @@ class OllamaService
         $sanitized = mb_convert_encoding($text, 'UTF-8', 'UTF-8');
         if ($sanitized === false) {
             Log::error("OllamaService: Malformed UTF-8 characters detected and removed.");
-            // Replace malformed characters with a Unicode replacement character
             $sanitized = iconv('UTF-8', 'UTF-8//IGNORE', $text);
         }
         return $sanitized;

@@ -16,7 +16,9 @@ class VerticalController extends Controller
     public function index()
     {
         return response()->json([
-            'verticals' => Vertical::with('folder')->get()
+            'verticals' => Vertical::with(['folder', 'interactions' => function($q) {
+                $q->latest()->limit(50);
+            }])->get()
         ]);
     }
 
@@ -30,6 +32,19 @@ class VerticalController extends Controller
         ]);
 
         $vertical = Vertical::create($validated);
+
+        // Add Artistic Greeting
+        $folder = ManagedFolder::find($validated['folder_id']);
+        $vertical->interactions()->create([
+            'role' => 'assistant',
+            'content' => "### 💠 Neural Link Established: **{$folder->name}**\n\n" .
+                "I have connected to this workspace and am currently mapping its architecture. You can now perform deep document queries or use **Magic Commands** to operate on files.\n\n" .
+                "**Quick Start:**\n" .
+                "- Ask: *\"Summarize the most recent documents here\"*\n" .
+                "- Type `/` to see available system commands.\n" .
+                "- Use `@` to mention specific contexts.\n\n" .
+                "How shall we begin our analysis?"
+        ]);
 
         return response()->json($vertical);
     }
@@ -97,80 +112,38 @@ class VerticalController extends Controller
         ]);
     }
 
-    public function query(Request $request, string $verticalId, OllamaService $ollama, RagService $rag) // Updated signature
+    public function executeAction(Request $request, string $verticalId, \App\Services\ActionService $actionService)
+    {
+        $vertical = Vertical::with('folder')->findOrFail($verticalId);
+
+        $validated = $request->validate([
+            'type' => 'required|string',
+            'params' => 'required|array',
+        ]);
+
+        $result = $actionService->execute($validated['type'], $validated['params'], $vertical->folder);
+
+        if (!$result['success']) {
+            return response()->json([
+                'success' => false,
+                'error' => $result['error'] ?? 'Filesystem operation failed. Check macOS folder permissions.'
+            ]);
+        }
+
+        return response()->json($result);
+    }
+
+    public function query(Request $request, string $verticalId, \App\Services\VerticalService $verticalService)
     {
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
-        
-        // Manually retrieve the vertical
-        $vertical = Vertical::findOrFail($verticalId);
-        
+
+        $vertical = Vertical::with('folder')->findOrFail($verticalId);
         $request->validate(['query' => 'required|string']);
-        
+
         $input = $request->input('query');
-        $model = Setting::get('llm_model', config('services.ollama.model'));
 
-        // 1. Persist User Message
-        $vertical->interactions()->create([
-            'vertical_id' => $vertical->id,
-            'role' => 'user',
-            'content' => $input
-        ]);
+        $result = $verticalService->ask($vertical, $input);
 
-        // 2. Fetch Conversation History (last 10 messages for context)
-        $history = $vertical->interactions()
-            ->latest()
-            ->limit(11) 
-            ->get()
-            ->reverse();
-
-        $historyContext = "CONVERSATION HISTORY:
-";
-        foreach ($history as $msg) {
-            $historyContext .= strtoupper($msg->role) . ": " . $msg->content . "
-";
-        }
-
-        // 3. Contextual Recall (Scoped to Vertical Folder)
-        $relevantKnowledge = $rag->recall($input, 10, $vertical->folder_id);
-        
-        $context = "VERTICAL CONTEXT (Source: " . ($vertical->folder?->name ?? 'Folder') . "):
-";
-        foreach ($relevantKnowledge as $m) {
-            $context .= "- " . $m['content'] . "
-";
-        }
-
-        // 4. Focused System Prompt
-        $basePrompt = $vertical->settings['system_prompt'] ?? config('arkhein.vantage.prompts.rag_system');
-
-        $systemPrompt = $basePrompt . "
-
-" . $context . "
-
-" . $historyContext;
-
-        $finalPrompt = "System: $systemPrompt
-
-Assistant:";
-
-        // 5. Generate Response (OllamaService handles config internally)
-        $assistantContent = $ollama->generate($finalPrompt);
-
-        // 6. Persist Assistant Response
-        $interaction = $vertical->interactions()->create([
-            'vertical_id' => $vertical->id,
-            'role' => 'assistant',
-            'content' => $assistantContent,
-            'metadata' => [
-                'sources' => collect($relevantKnowledge)->map(fn($k) => [
-                    'filename' => $k['metadata']['filename'] ?? 'unknown'
-                ])->unique()->values()->all()
-            ]
-        ]);
-
-        return response()->json([
-            'response' => $assistantContent,
-            'sources' => $interaction->metadata['sources'] ?? []
-        ]);
+        return response()->json($result);
     }
 }

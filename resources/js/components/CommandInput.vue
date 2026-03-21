@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import axios from 'axios';
-import { Folder, FileText, Terminal, HelpCircle, ChevronRight } from 'lucide-vue-next';
+import { 
+    Folder, FileText, Terminal, HelpCircle, ChevronRight,
+    PlusCircle, Move, LayoutGrid, Trash2, RefreshCw
+} from 'lucide-vue-next';
 import { ref, computed, watch, nextTick } from 'vue';
 import { Input } from '@/components/ui/input';
 
@@ -26,8 +29,12 @@ const selectedIndex = ref(0);
 // Data stores
 const suggestions = ref<any[]>([]);
 const commands = [
-    { type: 'command', name: 'help', description: 'Show available commands', icon: HelpCircle },
-    { type: 'command', name: 'sync', description: 'Synchronize all authorized folders', icon: Terminal },
+    { type: 'command', name: 'help', description: 'Show all magic commands', icon: HelpCircle },
+    { type: 'command', name: 'create', description: 'Create file with recent context', icon: PlusCircle },
+    { type: 'command', name: 'move', description: 'Move a file to a folder', icon: Move },
+    { type: 'command', name: 'organize', description: 'Group files by extension', icon: LayoutGrid },
+    { type: 'command', name: 'delete', description: 'Remove a file from folder', icon: Trash2 },
+    { type: 'command', name: 'sync', description: 'Re-index current folder', icon: RefreshCw },
 ];
 
 /**
@@ -82,8 +89,7 @@ const filteredItems = computed(() => {
  * Logic detection
  */
 const handleValueUpdate = (value: string) => {
-    // We need the raw input element for selection start
-    const el = document.getElementById('arkhein-shell-input') as HTMLInputElement;
+    const el = inputRef.value?.$el?.querySelector('input') || inputRef.value;
 
     if (!el) {
 return;
@@ -108,7 +114,7 @@ return;
     
     // Update search prefix if we are inside a trigger
     if (showPopup.value) {
-        if (pos < triggerPos.value || value[pos - 1] === ' ') {
+        if (pos < triggerPos.value || (value[pos - 1] === ' ' && triggerChar.value === '/')) {
             closePopup();
         } else {
             searchPrefix.value = value.slice(triggerPos.value, pos);
@@ -130,7 +136,7 @@ const closePopup = () => {
 };
 
 const selectItem = (item: any) => {
-    const el = document.getElementById('arkhein-shell-input') as HTMLInputElement;
+    const el = inputRef.value?.$el?.querySelector('input') || inputRef.value;
     const pos = el?.selectionStart || 0;
     
     const before = localValue.value.slice(0, triggerPos.value);
@@ -226,7 +232,7 @@ const handleKeydown = (e: KeyboardEvent) => {
         </div>
 
         <Input
-            id="arkhein-shell-input"
+            ref="inputRef"
             v-model="localValue"
             @keydown="handleKeydown"
             :placeholder="placeholder"

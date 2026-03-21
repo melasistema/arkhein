@@ -48,6 +48,10 @@ Route::middleware([])->group(function () {
     Route::delete('/verticals/{vertical}', [VerticalController::class, 'destroy'])->name('verticals.destroy');
     Route::post('/verticals/{vertical}/sync', [VerticalController::class, 'sync'])->name('verticals.sync');
     Route::post('/verticals/{vertical}/query', [VerticalController::class, 'query'])->name('verticals.query');
+    Route::post('/verticals/{vertical}/action', [VerticalController::class, 'executeAction'])->name('verticals.action.execute');
+
+    // Chat Suggestions
+    Route::get('/chat/suggestions', [\App\Http\Controllers\ChatController::class, 'suggestions'])->name('chat.suggestions');
 
     // Settings
     Route::get('/settings', [SettingsController::class, 'index'])->name('settings');
