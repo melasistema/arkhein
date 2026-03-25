@@ -164,11 +164,34 @@ class VerticalService
     {
         foreach ($actions as &$action) {
             if ($action['type'] === 'create_file' && ($action['params']['content'] ?? '') === 'PLACEHOLDER') {
+                
+                // 1. DEEP CREATION: Check if there's a specific instruction for this file
+                $instruction = $action['params']['instruction'] ?? null;
+                if ($instruction) {
+                    Log::info("Arkhein Orchestrator: Triggering Deep Creation for instruction -> {$instruction}");
+                    
+                    // Perform a fresh RAG lookup for this specific file content
+                    $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
+                    $prompt = "You are drafting a professional document based on specific knowledge.
+                    Generate high-quality, well-structured markdown content.
+                    
+                    ### KNOWLEDGE:
+                    " . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "
+                    
+                    ### TASK:
+                    {$instruction}";
+
+                    $deepContent = $this->ollama->generate($prompt);
+                    $action['params']['content'] = $deepContent;
+                    $action['description'] = $this->actionService->describe($action['type'], $action['params']);
+                    continue;
+                }
+
+                // 2. CONTEXTUAL CREATION: Use default content (e.g. from current turn synthesis)
                 if ($defaultContent) {
                     $action['params']['content'] = $defaultContent;
                 } else {
-                    // Find the last assistant message that is NOT a system command response
-                    // We look back through 10 messages to find a "knowledge-rich" one
+                    // 3. HISTORICAL CREATION: Find the last knowledge-rich message in history
                     $candidates = $vertical->interactions()
                         ->where('role', 'assistant')
                         ->latest()
@@ -180,19 +203,16 @@ class VerticalService
                         if (is_string($meta)) $meta = json_decode($meta, true);
                         $intent = $meta['intent'] ?? 'CHAT';
 
-                        // Skip messages that are just command feedback or confirmation requests
                         if (in_array($intent, ['COMMAND_HELP', 'CONFIRMATION', 'COMMAND_SYNC'])) continue;
                         if (str_contains($msg->content, "Command parsed") || str_contains($msg->content, "prepared the plan")) continue;
                         if (str_contains($msg->content, "lost track of the specific file plan")) continue;
 
-                        // If we got here, this is likely the summary or data the user wants to save
                         $cleanContent = preg_replace('/^### PREVIEW:[\s\n]*/i', '', $msg->content);
                         $action['params']['content'] = $cleanContent;
                         break;
                     }
                 }
                 
-                // If we still have a placeholder (nothing found), use a fallback message
                 if (($action['params']['content'] ?? '') === 'PLACEHOLDER') {
                     $action['params']['content'] = "Arkhein Archive: No recent conversation context was found to populate this file.";
                 }

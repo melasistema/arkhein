@@ -38,11 +38,12 @@ class ActionExtractor
         2. If moving a file into a folder, the 'to' path MUST include that folder name (e.g. 'docs/paper.pdf').
         3. If the user mentions 'this summary' or 'the content', refer to the CONTEXT provided.
         4. Default Extension: Always use '.md' for new files unless the user explicitly requests another format. NEVER create '.pdf' files for text content.
-        5. Use 'PLACEHOLDER' for any content parameters if you are creating files from context.
-        6. Group actions logically. If multiple files go to the same folder, only create that folder once.
-        7. Output ONLY the JSON object. No other text.";
+        5. Deep Creation: If the user provides a specific prompt for the file content (e.g., '/create file.md with a list of features'), include that prompt in a parameter called 'instruction'.
+        6. Use 'PLACEHOLDER' for any content parameters if you are creating files.
+        7. Group actions logically. If multiple files go to the same folder, only create that folder once.
+        8. Output ONLY the JSON object. No other text.";
 
-        $example = "Example Mapping:\nRequest: 'move paper.pdf to docs and create summary.txt'\nResponse: {\"reasoning\": \"Moving one file and creating a summary\", \"actions\": [{\"type\":\"create_folder\", \"params\":{\"path\":\"docs\"}}, {\"type\":\"move_file\", \"params\":{\"from\":\"paper.pdf\", \"to\":\"docs/paper.pdf\"}}, {\"type\":\"create_file\", \"params\":{\"path\":\"summary.txt\", \"content\":\"PLACEHOLDER\"}}]}";
+        $example = "Example Mapping:\nRequest: '/create report.md with all interview findings'\nResponse: {\"reasoning\": \"Generating a detailed report based on interview knowledge\", \"actions\": [{\"type\":\"create_file\", \"params\":{\"path\":\"report.md\", \"content\":\"PLACEHOLDER\", \"instruction\": \"all interview findings\"}}]}";
 
         $user = "CURRENT FILES IN FOLDER:\n{$filesList}\n\n";
         if ($context) {
