@@ -114,9 +114,19 @@ class SettingsController extends Controller
         return back();
     }
 
-    public function removeFolder(ManagedFolder $folder)
+    public function removeFolder(ManagedFolder $folder, MemoryService $memory)
     {
+        Log::info("Arkhein: De-authorizing folder @{$folder->name}. Purging all associated knowledge and cards.");
+
+        // 1. Purge all Knowledge chunks from RAG index and binary Vektor
+        $memory->purgeFolderKnowledge($folder->id);
+
+        // 2. Delete all Vantage cards (Verticals) referencing this folder
+        $folder->verticals()->delete();
+
+        // 3. Remove the managed folder authority
         $folder->delete();
+
         return back();
     }
 

@@ -5,11 +5,10 @@ namespace App\Http\Controllers;
 use App\Models\Vertical;
 use App\Models\Setting;
 use App\Models\ManagedFolder;
-use App\Services\MemoryService;
 use App\Services\OllamaService;
-use App\Services\RagService; // Updated
+use App\Services\RagService; 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log; // Added for debugging
+use Illuminate\Support\Facades\Log; 
 
 class VerticalController extends Controller
 {
@@ -63,22 +62,10 @@ class VerticalController extends Controller
         return response()->json($vertical);
     }
 
-    public function destroy(string $verticalId, MemoryService $memory)
+    public function destroy(string $verticalId)
     {
         $vertical = Vertical::findOrFail($verticalId);
-        $folderId = $vertical->folder_id;
-
         $vertical->delete();
-
-        // If this card was the last one pointing at a folder, purge its document knowledge.
-        // This keeps SQLite (SSOT) and Vektor (disposable index) free of orphan data.
-        if ($folderId) {
-            $stillReferenced = Vertical::where('folder_id', $folderId)->exists();
-
-            if (! $stillReferenced) {
-                $memory->purgeFolderKnowledge((int) $folderId);
-            }
-        }
 
         return response()->json(['success' => true]);
     }
