@@ -27,35 +27,13 @@ class RagService
             return [];
         }
 
-        // If a folderId is provided, we search with a MUCH higher limit and filter post-retrieval
-        // since the vector index is flat and global.
-        $searchLimit = $folderId ? $limit * 100 : $limit;
-        $results = $this->memory->search($embedding, $searchLimit);
+        $results = $this->memory->search($embedding, $limit, null, $folderId);
 
-        Log::info("Arkhein RAG: Raw Memory Search Results", [
-            'raw_count' => count($results),
+        Log::info("Arkhein RAG: Search Results", [
+            'count' => count($results),
             'top_score' => count($results) > 0 ? $results[0]['score'] : null,
-            'threshold_used' => config('knowledge.recall_threshold', 0.65)
+            'partition' => $folderId ?? 'global'
         ]);
-
-        if ($folderId) {
-            $filtered = collect($results)
-                ->filter(function ($item) use ($folderId) {
-                    $metadata = $item['metadata'] ?? [];
-                    $match = isset($metadata['folder_id']) && (int) $metadata['folder_id'] === $folderId;
-                    return $match;
-                })
-                ->take($limit)
-                ->values()
-                ->toArray();
-
-            Log::info("Arkhein RAG: Filtered Results", [
-                'folder_id' => $folderId,
-                'filtered_count' => count($filtered)
-            ]);
-
-            return $filtered;
-        }
 
         return $results;
     }

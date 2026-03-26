@@ -133,4 +133,29 @@ class VerticalController extends Controller
 
         return response()->json($result);
     }
+
+    public function streamQuery(Request $request, string $verticalId, \App\Services\VerticalService $verticalService)
+    {
+        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
+
+        $vertical = Vertical::with('folder')->findOrFail($verticalId);
+        $request->validate(['query' => 'required|string']);
+
+        $input = $request->input('query');
+
+        return response()->stream(function () use ($vertical, $input, $verticalService) {
+            $verticalService->stream($vertical, $input, function ($event, $data) {
+                echo "data: " . json_encode(['event' => $event, 'data' => $data]) . "\n\n";
+                if (ob_get_level() > 0) ob_flush();
+                flush();
+            });
+            echo "data: [DONE]\n\n";
+            if (ob_get_level() > 0) ob_flush();
+            flush();
+        }, 200, [
+            'Cache-Control' => 'no-cache',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
 }

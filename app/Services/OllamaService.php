@@ -96,8 +96,74 @@ class OllamaService
     }
 
     /**
-     * Generate embeddings for a given text.
+     * Stream a response using the Chat API.
      */
+    public function streamChat(array $messages, callable $onChunk, ?string $model = null, array $options = []): void
+    {
+        $settingModel = Setting::get('llm_model');
+        $configModel = config('services.ollama.model');
+        $selectedModel = $model ?? $settingModel ?? $configModel;
+
+        if (empty($selectedModel)) {
+            Log::error("Ollama streamChat failed: No LLM model configured.");
+            $onChunk("Inference engine unreachable. Check configuration.");
+            return;
+        }
+
+        $payload = [
+            'model' => $selectedModel,
+            'messages' => $messages,
+            'stream' => true,
+        ];
+
+        if (isset($options['format'])) $payload['format'] = $options['format'];
+        if (isset($options['options'])) $payload['options'] = $options['options'];
+
+        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        
+        try {
+            $response = Http::timeout($timeout)
+                ->withOptions(['stream' => true])
+                ->post("{$this->host}/api/chat", $payload);
+
+            if ($response->failed()) {
+                Log::error("Ollama streamChat failed: " . $response->body());
+                $onChunk("Inference engine failed. Check system log.");
+                return;
+            }
+
+            $body = $response->toPsrResponse()->getBody();
+
+            while (!$body->eof()) {
+                $line = $this->readLine($body);
+                if (empty($line)) continue;
+
+                $data = json_decode($line, true);
+                if (isset($data['message']['content'])) {
+                    $onChunk($data['message']['content']);
+                }
+                
+                if (isset($data['done']) && $data['done']) {
+                    break;
+                }
+            }
+        } catch (\Exception $e) {
+            Log::error("Ollama streamChat exception: " . $e->getMessage());
+            $onChunk("\n\n[Stream Interrupted]");
+        }
+    }
+
+    protected function readLine($body): string
+    {
+        $line = '';
+        while (!$body->eof()) {
+            $char = $body->read(1);
+            if ($char === "\n") break;
+            $line .= $char;
+        }
+        return $line;
+    }
+
     public function embeddings(string $prompt, ?string $model = null): ?array
     {
         $settingModel = Setting::get('embedding_model');

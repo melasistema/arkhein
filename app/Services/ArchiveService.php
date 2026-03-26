@@ -68,7 +68,7 @@ class ArchiveService
 
         if ($anyChanges || $forceFull) {
             $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-            $this->memory->rebuildIndex($dimensions);
+            $this->memory->rebuildIndex($dimensions, $folder->id);
         }
 
         return ['files' => $indexedFiles, 'chunks' => $totalChunks];

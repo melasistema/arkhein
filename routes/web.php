@@ -25,6 +25,7 @@ Route::middleware([])->group(function () {
     // Help Module
     Route::get('/help', [HelpController::class, 'index'])->name('help');
     Route::post('/help/send', [HelpController::class, 'send'])->name('help.send');
+    Route::post('/help/stream', [HelpController::class, 'stream'])->name('help.stream');
     Route::post('/help/clear', [HelpController::class, 'clear'])->name('help.clear');
 
     // Vantage Module
@@ -48,6 +49,7 @@ Route::middleware([])->group(function () {
     Route::delete('/verticals/{vertical}', [VerticalController::class, 'destroy'])->name('verticals.destroy');
     Route::post('/verticals/{vertical}/sync', [VerticalController::class, 'sync'])->name('verticals.sync');
     Route::post('/verticals/{vertical}/query', [VerticalController::class, 'query'])->name('verticals.query');
+    Route::post('/verticals/{vertical}/stream', [VerticalController::class, 'streamQuery'])->name('verticals.stream');
     Route::post('/verticals/{vertical}/action', [VerticalController::class, 'executeAction'])->name('verticals.action.execute');
 
     // Chat Suggestions

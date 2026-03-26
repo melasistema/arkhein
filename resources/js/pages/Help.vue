@@ -55,25 +55,61 @@ const sendMessage = async () => {
 
     const userContent = newMessage.value;
     localInteractions.value.push({ role: 'user', content: userContent });
+    
+    // Add an empty assistant message to populate as chunks arrive
+    const assistantIndex = localInteractions.value.length;
+    localInteractions.value.push({ role: 'assistant', content: '' });
+
     newMessage.value = '';
     isLoading.value = true;
     
     await scrollToBottom();
 
     try {
-        const response = await axios.post('/help/send', {
-            message: userContent
+        const response = await fetch('/help/stream', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || ''
+            },
+            body: JSON.stringify({ message: userContent })
         });
 
-        localInteractions.value.push({
-            role: 'assistant',
-            content: response.data.message
-        });
+        if (!response.body) throw new Error('ReadableStream not supported');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.replace('data: ', '').trim();
+                
+                if (dataStr === '[DONE]') break;
+
+                try {
+                    const data = JSON.parse(dataStr);
+                    if (data.chunk) {
+                        localInteractions.value[assistantIndex].content += data.chunk;
+                        scrollToBottom();
+                    }
+                } catch (e) {
+                    // console.error("Error parsing SSE chunk", e);
+                }
+            }
+        }
     } catch (error) {
-        localInteractions.value.push({
-            role: 'assistant',
-            content: 'Sorry, I encountered an error while processing your request.',
-        });
+        console.error("Stream error:", error);
+        localInteractions.value[assistantIndex].content = 'Sorry, I encountered an error while processing your request.';
     } finally {
         isLoading.value = false;
         await scrollToBottom();

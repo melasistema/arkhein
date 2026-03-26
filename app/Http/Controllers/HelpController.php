@@ -25,36 +25,77 @@ class HelpController extends Controller
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
 
         $input = $request->input('message');
-        
-        // 1. Save User Interaction
-        HelpInteraction::create([
-            'role' => 'user', 
-            'content' => $input
-        ]);
+        $this->saveUserMessage($input);
 
-        // 2. Build History Context
-        $history = HelpInteraction::latest()->limit(10)->get()->reverse();
-        $historyContext = "RECENT CONVERSATION:\n";
-        foreach ($history as $h) {
-            $historyContext .= strtoupper($h->role) . ": " . $h->content . "\n";
-        }
+        $messages = $this->buildChatPayload($prompts);
+        $assistantMessage = $ollama->chat($messages);
 
-        // 3. System Prompt
-        $systemPrompt = $prompts->buildHelpPrompt();
-        $finalPrompt = "System: $systemPrompt\n\n$historyContext\n\nAssistant:";
-
-        // 4. Generate Response (OllamaService handles config internally)
-        $assistantMessage = $ollama->generate($finalPrompt);
-
-        // 5. Save Assistant Response
-        HelpInteraction::create([
-            'role' => 'assistant',
-            'content' => $assistantMessage
-        ]);
+        $this->saveAssistantMessage($assistantMessage);
 
         return response()->json([
             'message' => $assistantMessage
         ]);
+    }
+
+    public function stream(
+        Request $request, 
+        OllamaService $ollama, 
+        PromptService $prompts
+    ) {
+        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
+        
+        $input = $request->input('message');
+        $this->saveUserMessage($input);
+
+        $messages = $this->buildChatPayload($prompts);
+
+        return response()->stream(function () use ($ollama, $messages) {
+            $fullResponse = "";
+            $ollama->streamChat($messages, function ($chunk) use (&$fullResponse) {
+                $fullResponse .= $chunk;
+                echo "data: " . json_encode(['chunk' => $chunk]) . "\n\n";
+                if (ob_get_level() > 0) ob_flush();
+                flush();
+            });
+
+            $this->saveAssistantMessage($fullResponse);
+            echo "data: [DONE]\n\n";
+            if (ob_get_level() > 0) ob_flush();
+            flush();
+        }, 200, [
+            'Cache-Control' => 'no-cache',
+            'Content-Type' => 'text/event-stream',
+            'X-Accel-Buffering' => 'no', // Disable buffering for Nginx
+        ]);
+    }
+
+    protected function saveUserMessage(string $content)
+    {
+        HelpInteraction::create([
+            'role' => 'user', 
+            'content' => $content
+        ]);
+    }
+
+    protected function saveAssistantMessage(string $content)
+    {
+        HelpInteraction::create([
+            'role' => 'assistant',
+            'content' => $content
+        ]);
+    }
+
+    protected function buildChatPayload(PromptService $prompts): array
+    {
+        $history = HelpInteraction::latest()->limit(10)->get()->reverse();
+        $systemPrompt = $prompts->buildHelpPrompt();
+        
+        $messages = [['role' => 'system', 'content' => $systemPrompt]];
+        foreach ($history as $h) {
+            $messages[] = ['role' => $h->role, 'content' => $h->content];
+        }
+
+        return $messages;
     }
 
     public function clear()

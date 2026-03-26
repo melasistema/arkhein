@@ -22,81 +22,135 @@ class VerticalService
     public function ask(Vertical $vertical, string $query): array
     {
         Log::info("Arkhein Orchestrator: Start", ['query' => $query]);
-
         $vertical->interactions()->create(['role' => 'user', 'content' => $query]);
 
         $intent = $this->bouncer->classify($query);
-        
         $folderPath = $vertical->folder?->path;
-        $currentFiles = [];
-        if ($folderPath && File::isDirectory($folderPath)) {
-            $currentFiles = collect(File::allFiles($folderPath))->map(fn($f) => $f->getRelativePathname())->toArray();
-        }
-
-        $assistantResponse = "";
-        $pendingActions = [];
-        $relevantKnowledge = [];
+        $currentFiles = $this->getFolderFiles($folderPath);
 
         // 1. AUTO-EXECUTION (Natural Language Confirmation)
         if ($intent === 'CONFIRMATION') {
-            Log::info("Arkhein Orchestrator: Confirmation received. Searching for plan.");
-            
-            // Search back up to 5 messages for a plan
-            $recent = $vertical->interactions()->where('role', 'assistant')->latest()->limit(5)->get();
-            $lastAssistant = null;
-            $actionsToRun = [];
-
-            foreach ($recent as $msg) {
-                $meta = $msg->metadata;
-                if (is_string($meta)) $meta = json_decode($meta, true);
-                
-                if (!empty($meta['pending_actions'])) {
-                    $lastAssistant = $msg;
-                    $actionsToRun = $meta['pending_actions'];
-                    break;
-                }
-            }
-
-            if ($lastAssistant && !empty($actionsToRun)) {
-                Log::info("Arkhein Orchestrator: Plan found. Executing.", ['count' => count($actionsToRun)]);
-                $results = [];
-                foreach ($actionsToRun as $action) {
-                    $res = $this->actionService->execute($action['type'], $action['params'], $vertical->folder);
-                    $results[] = ($res['success'] ? "✅" : "❌") . " " . $action['description'];
-                }
-                
-                $assistantResponse = "Execution Complete:\n\n" . implode("\n", $results) . "\n\nI have verified the folder state.";
-                
-                // Update original plan to reflect execution
-                $origMeta = $lastAssistant->metadata;
-                if (is_string($origMeta)) $origMeta = json_decode($origMeta, true);
-                foreach ($actionsToRun as &$a) { $a['status'] = 'executed'; }
-                $lastAssistant->update(['metadata' => array_merge($origMeta, ['pending_actions' => $actionsToRun])]);
-
-                return $this->finalize($vertical, $assistantResponse, [], [], $intent);
-            }
-
-            Log::warning("Arkhein Orchestrator: No plan found for confirmation.");
-            $assistantResponse = "I'm ready to proceed, but I've lost track of the specific file plan. Could you re-state what you'd like me to save or move?";
-            return $this->finalize($vertical, $assistantResponse, [], [], $intent);
+            return $this->handleConfirmation($vertical, $intent);
         }
 
         // 2. MAGIC TOUCH COMMANDS
         if (str_starts_with($intent, 'COMMAND_')) {
-            $result = $this->handleCommand($vertical, $intent, $query, $folderPath, $currentFiles);
-            return $result;
+            return $this->handleCommand($vertical, $intent, $query, $folderPath, $currentFiles);
         }
 
         // 3. NORMAL INTENTS (CHAT)
         $relevantKnowledge = $this->rag->recall($query, 10, $vertical->folder_id);
-        $history = $vertical->interactions()->latest()->skip(1)->limit(5)->get()->reverse();
+        $history = $this->getRecentHistory($vertical);
         $assistantResponse = $this->ollama->chat($this->buildChatMessages($vertical, $query, $relevantKnowledge, $history));
 
         if (empty(trim($assistantResponse))) {
             $assistantResponse = "I have processed your request.";
         }
 
-        return $this->finalize($vertical, $assistantResponse, $pendingActions, $relevantKnowledge, $intent, null);
+        return $this->finalize($vertical, $assistantResponse, [], $relevantKnowledge, $intent, null);
+    }
+
+    /**
+     * Stream a response with intermediate event notifications.
+     */
+    public function stream(Vertical $vertical, string $query, callable $onEvent): void
+    {
+        Log::info("Arkhein Orchestrator: Stream Start", ['query' => $query]);
+        $vertical->interactions()->create(['role' => 'user', 'content' => $query]);
+
+        $intent = $this->bouncer->classify($query);
+        $folderPath = $vertical->folder?->path;
+        $currentFiles = $this->getFolderFiles($folderPath);
+
+        // 1. SYNC INTENTS (Confirmation/Commands)
+        if ($intent === 'CONFIRMATION') {
+            $result = $this->handleConfirmation($vertical, $intent);
+            $onEvent('final', $result);
+            return;
+        }
+
+        if (str_starts_with($intent, 'COMMAND_')) {
+            $result = $this->handleCommand($vertical, $intent, $query, $folderPath, $currentFiles);
+            $onEvent('final', $result);
+            return;
+        }
+
+        // 2. ASYNC INTENTS (RAG CHAT)
+        $onEvent('status', 'Recalling knowledge...');
+        $relevantKnowledge = $this->rag->recall($query, 10, $vertical->folder_id);
+        
+        $onEvent('sources', collect($relevantKnowledge)->map(fn($k) => ['filename' => $k['metadata']['filename'] ?? 'unknown'])->unique()->values()->all());
+
+        $history = $this->getRecentHistory($vertical);
+        $messages = $this->buildChatMessages($vertical, $query, $relevantKnowledge, $history);
+
+        $fullResponse = "";
+        $onEvent('status', 'Synthesizing...');
+        
+        $this->ollama->streamChat($messages, function ($chunk) use (&$fullResponse, $onEvent) {
+            $fullResponse .= $chunk;
+            $onEvent('chunk', $chunk);
+        });
+
+        if (empty(trim($fullResponse))) {
+            $fullResponse = "I have processed your request.";
+            $onEvent('chunk', $fullResponse);
+        }
+
+        $result = $this->finalize($vertical, $fullResponse, [], $relevantKnowledge, $intent, null);
+        $onEvent('completed', $result);
+    }
+
+    protected function getFolderFiles(?string $path): array
+    {
+        if ($path && File::isDirectory($path)) {
+            return collect(File::allFiles($path))->map(fn($f) => $f->getRelativePathname())->toArray();
+        }
+        return [];
+    }
+
+    protected function getRecentHistory(Vertical $vertical, int $limit = 5): \Illuminate\Support\Collection
+    {
+        return $vertical->interactions()->latest()->skip(1)->limit($limit)->get()->reverse();
+    }
+
+    protected function handleConfirmation(Vertical $vertical, string $intent): array
+    {
+        Log::info("Arkhein Orchestrator: Confirmation received. Searching for plan.");
+        $recent = $vertical->interactions()->where('role', 'assistant')->latest()->limit(5)->get();
+        $lastAssistant = null;
+        $actionsToRun = [];
+
+        foreach ($recent as $msg) {
+            $meta = $msg->metadata;
+            if (is_string($meta)) $meta = json_decode($meta, true);
+            if (!empty($meta['pending_actions'])) {
+                $lastAssistant = $msg;
+                $actionsToRun = $meta['pending_actions'];
+                break;
+            }
+        }
+
+        if ($lastAssistant && !empty($actionsToRun)) {
+            Log::info("Arkhein Orchestrator: Plan found. Executing.", ['count' => count($actionsToRun)]);
+            $results = [];
+            foreach ($actionsToRun as $action) {
+                $res = $this->actionService->execute($action['type'], $action['params'], $vertical->folder);
+                $results[] = ($res['success'] ? "✅" : "❌") . " " . $action['description'];
+            }
+            
+            $assistantResponse = "Execution Complete:\n\n" . implode("\n", $results) . "\n\nI have verified the folder state.";
+            $origMeta = $lastAssistant->metadata;
+            if (is_string($origMeta)) $origMeta = json_decode($origMeta, true);
+            foreach ($actionsToRun as &$a) { $a['status'] = 'executed'; }
+            $lastAssistant->update(['metadata' => array_merge($origMeta, ['pending_actions' => $actionsToRun])]);
+
+            return $this->finalize($vertical, $assistantResponse, [], [], $intent);
+        }
+
+        Log::warning("Arkhein Orchestrator: No plan found for confirmation.");
+        $assistantResponse = "I'm ready to proceed, but I've lost track of the specific file plan. Could you re-state what you'd like me to save or move?";
+        return $this->finalize($vertical, $assistantResponse, [], [], $intent);
     }
 
     protected function handleCommand($vertical, $intent, $query, $folderPath, $currentFiles): array
@@ -123,8 +177,6 @@ class VerticalService
                 $result = $this->worker->extract($query, $folderPath, $currentFiles, $context);
                 $pendingActions = $result['actions'];
                 $reasoning = $result['reasoning'];
-                
-                // Fill placeholders using the previous assistant message if available
                 $this->fillPlaceholders($vertical, $pendingActions);
 
                 $assistantResponse = !empty($pendingActions) 
@@ -140,7 +192,6 @@ class VerticalService
                 $result = $this->worker->extract($orgPrompt, $folderPath, $currentFiles);
                 $pendingActions = $result['actions'];
                 $reasoning = $result['reasoning'];
-                
                 $assistantResponse = "Strategic organization plan generated. I've analyzed your file topics and grouped them logically. Please confirm below.";
                 break;
 
@@ -164,49 +215,25 @@ class VerticalService
     {
         foreach ($actions as &$action) {
             if ($action['type'] === 'create_file' && ($action['params']['content'] ?? '') === 'PLACEHOLDER') {
-                
-                // 1. DEEP CREATION: Check if there's a specific instruction for this file
                 $instruction = $action['params']['instruction'] ?? null;
                 if ($instruction) {
-                    Log::info("Arkhein Orchestrator: Triggering Deep Creation for instruction -> {$instruction}");
-                    
-                    // Perform a fresh RAG lookup for this specific file content
                     $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
-                    $prompt = "You are drafting a professional document based on specific knowledge.
-                    Generate high-quality, well-structured markdown content.
-                    
-                    ### KNOWLEDGE:
-                    " . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "
-                    
-                    ### TASK:
-                    {$instruction}";
-
-                    $deepContent = $this->ollama->generate($prompt);
-                    $action['params']['content'] = $deepContent;
+                    $prompt = "You are drafting a professional document based on specific knowledge.\nGenerate high-quality, well-structured markdown content.\n\n### KNOWLEDGE:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n### TASK:\n{$instruction}";
+                    $action['params']['content'] = $this->ollama->generate($prompt);
                     $action['description'] = $this->actionService->describe($action['type'], $action['params']);
                     continue;
                 }
 
-                // 2. CONTEXTUAL CREATION: Use default content (e.g. from current turn synthesis)
                 if ($defaultContent) {
                     $action['params']['content'] = $defaultContent;
                 } else {
-                    // 3. HISTORICAL CREATION: Find the last knowledge-rich message in history
-                    $candidates = $vertical->interactions()
-                        ->where('role', 'assistant')
-                        ->latest()
-                        ->limit(10)
-                        ->get();
-
+                    $candidates = $vertical->interactions()->where('role', 'assistant')->latest()->limit(10)->get();
                     foreach ($candidates as $msg) {
                         $meta = $msg->metadata;
                         if (is_string($meta)) $meta = json_decode($meta, true);
                         $intent = $meta['intent'] ?? 'CHAT';
-
                         if (in_array($intent, ['COMMAND_HELP', 'CONFIRMATION', 'COMMAND_SYNC'])) continue;
                         if (str_contains($msg->content, "Command parsed") || str_contains($msg->content, "prepared the plan")) continue;
-                        if (str_contains($msg->content, "lost track of the specific file plan")) continue;
-
                         $cleanContent = preg_replace('/^### PREVIEW:[\s\n]*/i', '', $msg->content);
                         $action['params']['content'] = $cleanContent;
                         break;
@@ -216,7 +243,6 @@ class VerticalService
                 if (($action['params']['content'] ?? '') === 'PLACEHOLDER') {
                     $action['params']['content'] = "Arkhein Archive: No recent conversation context was found to populate this file.";
                 }
-
                 $action['description'] = $this->actionService->describe($action['type'], $action['params']);
             }
         }
@@ -245,15 +271,7 @@ class VerticalService
 
     protected function buildChatMessages($vertical, $query, $knowledge, $history): array
     {
-        $systemPrompt = "You are Arkhein Vantage, an advanced analytical assistant for a specific folder of documents.
-        Your primary role is to converse, synthesize, and analyze the documents provided in your knowledge context.
-        
-        CRITICAL RULES:
-        1. Answer questions based on the provided KNOWLEDGE.
-        2. If the user asks you to write, draft, or summarize something, DO IT directly in your response. Do not say 'I will create a file'. Just write the text.
-        3. You CANNOT create or move files directly.
-        4. Be PROACTIVE: If you just provided a long summary or drafted a document, politely suggest to the user: 'If you want me to save this to a file, just use the command `/create [filename]`'.
-        5. If the user asks you to move or organize files, explain: 'I can organize your files! Just type `/organize` or `/move [filename] [folder]`.'";
+        $systemPrompt = "You are Arkhein Vantage, an advanced analytical assistant for a specific folder of documents.\nYour primary role is to converse, synthesize, and analyze the documents provided in your knowledge context.\n\nCRITICAL RULES:\n1. Answer questions based on the provided KNOWLEDGE.\n2. If the user asks you to write, draft, or summarize something, DO IT directly in your response. Do not say 'I will create a file'. Just write the text.\n3. You CANNOT create or move files directly.\n4. Be PROACTIVE: If you just provided a long summary or drafted a document, politely suggest to the user: 'If you want me to save this to a file, just use the command `/create [filename]`'.\n5. If the user asks you to move or organize files, explain: 'I can organize your files! Just type `/organize` or `/move [filename] [folder]`.'";
 
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
         foreach ($history as $msg) { $messages[] = ['role' => $msg->role, 'content' => $msg->content]; }

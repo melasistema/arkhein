@@ -205,29 +205,72 @@ const sendQuery = async () => {
     if (!query.value.trim() || isQuerying.value) return;
     const userMsg = query.value;
     messages.value.push({ role: 'user', content: userMsg });
+    
+    // Add empty assistant message for streaming
+    const assistantIndex = messages.value.length;
+    messages.value.push({ role: 'assistant', content: '', status: 'Initializing...' });
+    
     query.value = '';
     isQuerying.value = true;
     scrollToBottom();
 
     try {
-        const response = await axios.post(`/verticals/${currentVertical.value.id}/query`, {
-            query: userMsg
+        const response = await fetch(`/verticals/${currentVertical.value.id}/stream`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || ''
+            },
+            body: JSON.stringify({ query: userMsg })
         });
-        
-        if (response.data.interaction) {
-            const interaction = response.data.interaction;
-            // Inject direct content and actions for 100% reactivity
-            if (response.data.response) interaction.content = response.data.response;
-            if (response.data.pending_actions) {
-                interaction.pending_actions = response.data.pending_actions;
+
+        if (!response.body) throw new Error('ReadableStream not supported');
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || '';
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue;
+                const dataStr = line.replace('data: ', '').trim();
+                if (dataStr === '[DONE]') break;
+
+                try {
+                    const { event, data } = JSON.parse(dataStr);
+                    
+                    if (event === 'status') {
+                        messages.value[assistantIndex].status = data;
+                    } else if (event === 'sources') {
+                        sources.value = data;
+                    } else if (event === 'chunk') {
+                        messages.value[assistantIndex].content += data;
+                        messages.value[assistantIndex].status = 'Synthesizing...';
+                        scrollToBottom();
+                    } else if (event === 'completed' || event === 'final') {
+                        // Replace the temporary message with the finalized one from DB
+                        const interaction = data.interaction || data;
+                        if (data.response) interaction.content = data.response;
+                        if (data.pending_actions) interaction.pending_actions = data.pending_actions;
+                        
+                        messages.value[assistantIndex] = interaction;
+                        sources.value = data.sources || sources.value;
+                    }
+                } catch (e) {
+                    // console.error("Error parsing Vantage stream chunk", e);
+                }
             }
-            console.log("Arkhein UI: Received Full Payload", interaction);
-            messages.value.push(interaction);
         }
-        sources.value = response.data.sources || [];
     } catch (e) {
         console.error("Arkhein Query Error", e);
-        messages.value.push({ role: 'assistant', content: "Analysis failed. Ensure the folder is indexed." });
+        messages.value[assistantIndex].content = "Analysis failed. Ensure the folder is indexed.";
     } finally {
         isQuerying.value = false;
         scrollToBottom();
@@ -387,7 +430,9 @@ const sendQuery = async () => {
 
                         <div v-if="isQuerying" class="flex gap-2 items-center px-1 py-2">
                             <Loader2 class="h-3 w-3 animate-spin text-primary" />
-                            <span class="text-[9px] font-bold opacity-30 uppercase tracking-tighter">Analyzing Registry...</span>
+                            <span class="text-[9px] font-bold opacity-30 uppercase tracking-tighter">
+                                {{ messages[messages.length - 1]?.status || 'Analyzing Registry...' }}
+                            </span>
                         </div>
                     </div>
                 </ScrollArea>
