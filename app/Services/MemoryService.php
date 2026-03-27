@@ -171,12 +171,12 @@ class MemoryService
     /**
      * Save any piece of knowledge into a partition.
      */
-    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [])
+    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false)
     {
         $folderId = isset($metadata['folder_id']) ? (int) $metadata['folder_id'] : null;
         
         try {
-            // 1. Persistence in SSOT (SQLite)
+            // 1. Persistence in SSOT (SQLite) - ALWAYS DO THIS
             Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
@@ -186,6 +186,12 @@ class MemoryService
                     'metadata' => $metadata
                 ]
             );
+
+            // If we are in bulk mode, we skip live binary insertion 
+            // and rely on the rebuildIndex() at the end.
+            if ($skipIndex) {
+                return true;
+            }
 
             // 2. Index in Folder Partition (if applicable)
             if ($folderId) {

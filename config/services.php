@@ -37,9 +37,9 @@ return [
 
     'ollama' => [
         'host' => env('OLLAMA_HOST', 'http://localhost:11434'),
-        'model' => env('OLLAMA_DEFAULT_MODEL', 'qwen3:8b'),
-        'embedding_model' => env('OLLAMA_EMBEDDING_MODEL', 'qwen3-embedding:4b'),
-        'embedding_dimensions' => (int) env('OLLAMA_EMBEDDING_DIMENSIONS', 2560),
+        'model' => env('OLLAMA_DEFAULT_MODEL', 'mistral'),
+        'embedding_model' => env('OLLAMA_EMBEDDING_MODEL', 'nomic-embed-text:latest'),
+        'embedding_dimensions' => (int) env('OLLAMA_EMBEDDING_DIMENSIONS', 768),
     ],
 
 ];

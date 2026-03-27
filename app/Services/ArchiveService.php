@@ -129,7 +129,8 @@ class ArchiveService
                         'total_chunks' => count($chunks),
                         'folder_id' => $folder->id,
                         'last_modified' => $lastModified,
-                    ]
+                    ],
+                    true // skipIndex: bulk mode
                 );
                 $chunksCreated++;
             }

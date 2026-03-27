@@ -89,6 +89,27 @@ const optimizeConfiguration = () => {
     isSettingsLocked.value = false;
 };
 
+const findBestMatch = (baseName: string) => {
+    const installed = props.models.map(m => m.name);
+    if (installed.includes(baseName)) return baseName;
+    if (installed.includes(`${baseName}:latest`)) return `${baseName}:latest`;
+    // Fallback to the base name if nothing found, so the select remains consistent
+    return baseName;
+};
+
+const setComputeProfile = (profile: 'efficient' | 'elite') => {
+    if (profile === 'efficient') {
+        form.llm_model = findBestMatch('mistral');
+        form.embedding_model = findBestMatch('nomic-embed-text');
+        form.embedding_dimensions = 768;
+    } else {
+        form.llm_model = findBestMatch('qwen3:8b');
+        form.embedding_model = findBestMatch('qwen3-embedding:4b');
+        form.embedding_dimensions = 2560;
+    }
+    isSettingsLocked.value = false;
+};
+
 const rebuildIndex = async () => {
     if (isBusy.value) {
 return;
@@ -249,6 +270,37 @@ return;
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
+                            <!-- 0. Compute Profile Selection -->
+                            <div v-if="is_ollama_online" class="mb-6 grid grid-cols-2 gap-3">
+                                <button 
+                                    type="button"
+                                    @click="setComputeProfile('efficient')"
+                                    class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
+                                    :class="form.llm_model === 'mistral' ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-[10px] font-black uppercase tracking-widest text-primary">Efficient</span>
+                                        <Zap v-if="form.llm_model === 'mistral'" class="h-3 w-3 text-primary fill-current" />
+                                    </div>
+                                    <span class="text-xs font-bold">Mistral + Nomic</span>
+                                    <span class="text-[9px] leading-tight text-muted-foreground">Standard Mac (8GB-16GB RAM). Balanced speed and accuracy.</span>
+                                </button>
+
+                                <button 
+                                    type="button"
+                                    @click="setComputeProfile('elite')"
+                                    class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
+                                    :class="form.llm_model === 'qwen3:8b' ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <span class="text-[10px] font-black uppercase tracking-widest text-indigo-500">Elite</span>
+                                        <Sparkles v-if="form.llm_model === 'qwen3:8b'" class="h-3 w-3 text-indigo-500 fill-current" />
+                                    </div>
+                                    <span class="text-xs font-bold">Qwen3 Suite</span>
+                                    <span class="text-[9px] leading-tight text-muted-foreground">Pro/Max Specs (32GB+ RAM). Superior analytical reasoning.</span>
+                                </button>
+                            </div>
+
                             <!-- 1. Ollama Offline State -->
                             <div v-if="!is_ollama_online" class="p-6 rounded-[2rem] bg-red-500/5 border border-red-500/20 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
                                 <div class="p-4 rounded-3xl bg-red-500/10 text-red-500 shadow-inner">
