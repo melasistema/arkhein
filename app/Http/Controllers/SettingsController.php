@@ -17,7 +17,16 @@ class SettingsController extends Controller
 {
     public function index(Request $request, OllamaService $ollama)
     {
-        $models = $ollama->tags();
+        $models = [];
+        $isOllamaOnline = true;
+
+        try {
+            $models = $ollama->tags();
+        } catch (\Exception $e) {
+            Log::warning("Arkhein Settings: Ollama is unreachable. " . $e->getMessage());
+            $isOllamaOnline = false;
+        }
+
         $folders = ManagedFolder::all();
 
         // 1. Fetch Current DB Values
@@ -32,7 +41,7 @@ class SettingsController extends Controller
 
         $isOptimized = true;
 
-        if (!$currentLLM || !$currentEmbedding) {
+        if ($isOllamaOnline && (!$currentLLM || !$currentEmbedding)) {
             $availableModelNames = collect($models)->pluck('name')->all();
 
             // Auto-detect LLM
@@ -57,6 +66,7 @@ class SettingsController extends Controller
 
         $data = [
             'models' => $models,
+            'is_ollama_online' => $isOllamaOnline,
             'folders' => $folders,
             'is_optimized' => $isOptimized,
             'recommended' => [

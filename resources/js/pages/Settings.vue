@@ -22,6 +22,7 @@ import { settings } from '@/routes';
 
 const props = defineProps<{
     models: any[];
+    is_ollama_online: boolean;
     folders: any[];
     is_optimized: boolean;
     recommended: {
@@ -248,7 +249,39 @@ return;
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
-                            <div v-if="showOnboardingWarning" class="mb-6 p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex flex-col gap-3">
+                            <!-- 1. Ollama Offline State -->
+                            <div v-if="!is_ollama_online" class="p-6 rounded-[2rem] bg-red-500/5 border border-red-500/20 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
+                                <div class="p-4 rounded-3xl bg-red-500/10 text-red-500 shadow-inner">
+                                    <AlertTriangle class="h-8 w-8" />
+                                </div>
+                                <div class="space-y-2">
+                                    <h3 class="text-lg font-black uppercase tracking-tighter text-red-600">Inference Engine Offline</h3>
+                                    <p class="text-xs text-muted-foreground leading-relaxed max-w-sm">
+                                        Arkhein cannot connect to **Ollama** on `localhost:11434`. This is required for all local intelligence and memory operations.
+                                    </p>
+                                </div>
+                                
+                                <div class="grid grid-cols-1 gap-3 w-full">
+                                    <a href="https://ollama.com/download" target="_blank" class="w-full">
+                                        <Button variant="outline" class="w-full h-11 rounded-2xl border-red-500/20 hover:bg-red-500/10 text-red-600 font-bold gap-2">
+                                            <Database class="h-4 w-4" />
+                                            Download Ollama for macOS
+                                        </Button>
+                                    </a>
+                                    <Button @click="() => $inertia.reload()" class="w-full h-11 rounded-2xl gap-2 font-bold shadow-lg shadow-primary/20">
+                                        <RefreshCw class="h-4 w-4" />
+                                        Retry Connection
+                                    </Button>
+                                </div>
+
+                                <p class="text-[10px] opacity-40 uppercase tracking-widest font-black">
+                                    Sovereign Architecture • Zero-Cloud Policy
+                                </p>
+                            </div>
+
+                            <!-- 2. Normal Onboarding / Configuration UI -->
+                            <template v-else>
+                                <div v-if="showOnboardingWarning" class="mb-6 p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex flex-col gap-3">
                                 <div class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
                                     <Info class="h-4 w-4" />
                                     <span class="text-xs font-bold uppercase tracking-wider">Onboarding Recommendation</span>
@@ -351,6 +384,7 @@ return;
                                     </div>
                                 </div>
                             </form>
+                            </template>
                         </CardContent>
                     </Card>
 
