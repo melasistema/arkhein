@@ -24,6 +24,8 @@ return new class extends Migration
             $table->string('path')->unique();
             $table->string('name');
             $table->boolean('is_indexing')->default(false);
+            $table->integer('indexing_progress')->default(0);
+            $table->string('current_indexing_file')->nullable();
             $table->timestamp('last_indexed_at')->nullable();
             $table->timestamps();
         });

@@ -8,7 +8,7 @@ class ManagedFolder extends Model
 {
     protected $connection = 'nativephp';
 
-    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing'];
+    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing', 'indexing_progress', 'current_indexing_file'];
 
     public function verticals(): \Illuminate\Database\Eloquent\Relations\HasMany
     {

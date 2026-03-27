@@ -51,12 +51,28 @@ class ArchiveService
         }
 
         $files = File::allFiles($folder->path);
+        $totalFiles = count($files);
         $indexedFiles = 0;
         $totalChunks = 0;
         $anyChanges = false;
 
-        foreach ($files as $file) {
-            if ($this->shouldIgnore($file->getRelativePathname())) continue;
+        $folder->update([
+            'is_indexing' => true,
+            'indexing_progress' => 0,
+            'current_indexing_file' => null
+        ]);
+
+        foreach ($files as $index => $file) {
+            $filename = $file->getRelativePathname();
+            
+            // Phase 1: 0% -> 90% (Processing files and getting embeddings)
+            $progress = (int) (($index / $totalFiles) * 90);
+            $folder->update([
+                'indexing_progress' => $progress,
+                'current_indexing_file' => $filename
+            ]);
+
+            if ($this->shouldIgnore($filename)) continue;
             
             $res = $this->indexFile($folder, $file->getRealPath(), $forceFull);
             if ($res['chunks'] > 0) {
@@ -66,11 +82,19 @@ class ArchiveService
             }
         }
 
+        // Phase 2: 90% -> 100% (Vektor binary rebuild)
         if ($anyChanges || $forceFull) {
             $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-            $this->memory->rebuildIndex($dimensions, $folder->id);
+            $this->memory->rebuildIndex($dimensions, $folder->id, $folder);
             $this->memory->rebuildGlobalIndex($dimensions);
         }
+
+        $folder->update([
+            'is_indexing' => false,
+            'indexing_progress' => 0,
+            'current_indexing_file' => null,
+            'last_indexed_at' => now()
+        ]);
 
         return ['files' => $indexedFiles, 'chunks' => $totalChunks];
     }

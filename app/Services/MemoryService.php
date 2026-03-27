@@ -104,12 +104,12 @@ class MemoryService
     /**
      * Rebuild Vektor from Knowledge base for a specific partition.
      */
-    public function rebuildIndex(int $dimensions, ?int $folderId = null): bool
+    public function rebuildIndex(int $dimensions, ?int $folderId = null, ?\App\Models\ManagedFolder $folder = null): bool
     {
         $folderId = $folderId ?? $this->currentFolderId;
         $this->setPartition($folderId);
 
-        return $this->withRebuildLock($folderId, function () use ($dimensions, $folderId) {
+        return $this->withRebuildLock($folderId, function () use ($dimensions, $folderId, $folder) {
             Log::info("Arkhein: Rebuilding Vektor index for partition [{$folderId}]. Dimensions: $dimensions");
 
             $this->clearBinaryFiles($folderId);
@@ -121,9 +121,15 @@ class MemoryService
             if ($folderId) {
                 $query->where('metadata->folder_id', $folderId);
             }
-            // For global (null), index everything.
 
-            $query->chunk(100, function ($items) use ($indexer, $dimensions) {
+            $total = $query->count();
+            $processed = 0;
+
+            if ($folder) {
+                $folder->update(['current_indexing_file' => 'Optimizing Binary Index...']);
+            }
+
+            $query->chunk(100, function ($items) use ($indexer, $dimensions, $folder, $total, &$processed) {
                 foreach ($items as $item) {
                     try {
                         $embedding = $item->embedding;
@@ -134,6 +140,13 @@ class MemoryService
                         if (!is_array($embedding) || count($embedding) !== $dimensions) continue;
 
                         $indexer->insert($item->id, $embedding);
+                        $processed++;
+
+                        // Update progress within the final 10% (90-100)
+                        if ($folder && $processed % 50 === 0) {
+                            $subProgress = 90 + (int) (($processed / $total) * 10);
+                            $folder->update(['indexing_progress' => min(99, $subProgress)]);
+                        }
                     } catch (\Throwable $e) {
                         Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
                     }

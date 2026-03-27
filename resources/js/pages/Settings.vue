@@ -542,20 +542,36 @@ return;
                                 No folders authorized. Add one to begin indexing your local archive.
                             </div>
                             <div v-else class="space-y-3">
-                                <div v-for="folder in foldersList" :key="folder.id" class="flex items-center justify-between p-3 rounded-2xl bg-muted/30 border border-border/50">
-                                    <div class="flex flex-col gap-0.5 overflow-hidden">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-sm font-semibold truncate">{{ folder.name }}</span>
-                                            <span v-if="folder.is_indexing" class="flex items-center gap-1 text-[9px] text-primary animate-pulse font-black uppercase">
-                                                <RefreshCw class="h-2 w-2 animate-spin" />
-                                                Indexing
-                                            </span>
+                                <div v-for="folder in foldersList" :key="folder.id" class="flex flex-col gap-3 p-4 rounded-2xl bg-muted/30 border border-border/50">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex flex-col gap-0.5 overflow-hidden">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm font-semibold truncate">{{ folder.name }}</span>
+                                                <span v-if="folder.is_indexing" class="flex items-center gap-1 text-[9px] text-primary font-black uppercase">
+                                                    <RefreshCw class="h-2 w-2 animate-spin" />
+                                                    Indexing {{ folder.indexing_progress }}%
+                                                </span>
+                                            </div>
+                                            <span class="text-[10px] text-muted-foreground truncate">{{ folder.path }}</span>
                                         </div>
-                                        <span class="text-[10px] text-muted-foreground truncate">{{ folder.path }}</span>
+                                        <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)" :disabled="isBusy">
+                                            <Trash2 class="h-4 w-4" />
+                                        </Button>
                                     </div>
-                                    <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)" :disabled="isBusy">
-                                        <Trash2 class="h-4 w-4" />
-                                    </Button>
+
+                                    <!-- Progress Bar -->
+                                    <div v-if="folder.is_indexing" class="space-y-1.5">
+                                        <div class="flex items-center justify-between text-[9px] uppercase tracking-widest font-bold opacity-50">
+                                            <span class="truncate max-w-[200px] italic">Processing: {{ folder.current_indexing_file || 'Starting...' }}</span>
+                                            <span>{{ folder.indexing_progress }}%</span>
+                                        </div>
+                                        <div class="h-1.5 w-full bg-primary/10 rounded-full overflow-hidden">
+                                            <div 
+                                                class="h-full bg-primary transition-all duration-500 ease-out"
+                                                :style="{ width: folder.indexing_progress + '%' }"
+                                            ></div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
