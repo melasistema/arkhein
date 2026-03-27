@@ -63,9 +63,8 @@ class MemoryService
             $query = Knowledge::on('nativephp');
             if ($folderId) {
                 $query->where('metadata->folder_id', $folderId);
-            } else {
-                $query->whereNull('metadata->folder_id');
             }
+            // For global (null), we don't apply a where clause, indexing EVERYTHING.
 
             if ($query->count() > 0) {
                 Log::info("Arkhein: Binary index missing for partition [{$folderId}]. Rebuilding...");
@@ -95,6 +94,14 @@ class MemoryService
     }
 
     /**
+     * Rebuild the aggregate global index from all authorized knowledge.
+     */
+    public function rebuildGlobalIndex(int $dimensions): bool
+    {
+        return $this->rebuildIndex($dimensions, null);
+    }
+
+    /**
      * Rebuild Vektor from Knowledge base for a specific partition.
      */
     public function rebuildIndex(int $dimensions, ?int $folderId = null): bool
@@ -113,9 +120,8 @@ class MemoryService
 
             if ($folderId) {
                 $query->where('metadata->folder_id', $folderId);
-            } else {
-                $query->whereNull('metadata->folder_id');
             }
+            // For global (null), index everything.
 
             $query->chunk(100, function ($items) use ($indexer, $dimensions) {
                 foreach ($items as $item) {
@@ -170,8 +176,7 @@ class MemoryService
         $folderId = isset($metadata['folder_id']) ? (int) $metadata['folder_id'] : null;
         
         try {
-            $this->ensureIndex(count($embedding), $folderId);
-
+            // 1. Persistence in SSOT (SQLite)
             Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
@@ -182,6 +187,15 @@ class MemoryService
                 ]
             );
 
+            // 2. Index in Folder Partition (if applicable)
+            if ($folderId) {
+                $this->ensureIndex(count($embedding), $folderId);
+                $indexer = new Indexer();
+                $indexer->insert($id, $embedding);
+            }
+
+            // 3. Index in Global Partition (Aggregate)
+            $this->ensureIndex(count($embedding), null);
             $indexer = new Indexer();
             $indexer->insert($id, $embedding);
             
@@ -206,14 +220,13 @@ class MemoryService
             
             $results = $searcher->search($vector, $limit);
 
-            // Self-healing: if DB has data for this folder but Vektor returns 0
+            // Self-healing: if DB has data for this partition but Vektor returns 0
             if (empty($results)) {
                 $query = Knowledge::on('nativephp');
                 if ($folderId) {
                     $query->where('metadata->folder_id', $folderId);
-                } else {
-                    $query->whereNull('metadata->folder_id');
                 }
+                // For global (null), check total count.
 
                 if ($query->count() > 0) {
                     Log::warning("Arkhein: Search returned 0 hits for partition [{$folderId}] but DB is not empty. Rebuilding...");

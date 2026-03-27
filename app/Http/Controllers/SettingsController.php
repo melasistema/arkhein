@@ -133,7 +133,8 @@ class SettingsController extends Controller
     public function rebuild(MemoryService $memory)
     {
         $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-        $memory->rebuildIndex($dimensions);
+        $memory->rebuildIndex($dimensions); // Partitioned (current)
+        $memory->rebuildGlobalIndex($dimensions); // Aggregate
 
         return response()->json(['success' => true]);
     }
