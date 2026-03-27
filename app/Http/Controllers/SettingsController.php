@@ -37,7 +37,13 @@ class SettingsController extends Controller
         // 2. SMART DETECTION: If settings are empty (First Run), check if recommended models are in Ollama
         $recommendedLLM = config('services.ollama.model');
         $recommendedEmbedding = config('services.ollama.embedding_model');
-        $recommendedDimensions = config('services.ollama.embedding_dimensions');
+        $recommendedDimensions = (int) config('services.ollama.embedding_dimensions');
+
+        // SANITIZATION: If DB has the OLD default (2560) but we are now on Nomic (768), fix it
+        if ((int)$currentDimensions === 2560 && $currentEmbedding === 'nomic-embed-text:latest') {
+            Setting::set('embedding_dimensions', 768);
+            $currentDimensions = 768;
+        }
 
         $isOptimized = true;
 

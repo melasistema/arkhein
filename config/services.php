@@ -6,12 +6,6 @@ return [
     |--------------------------------------------------------------------------
     | Third Party Services
     |--------------------------------------------------------------------------
-    |
-    | This file is for storing the credentials for third party services such
-    | as Mailgun, Postmark, AWS and more. This file provides the de facto
-    | location for this type of information, allowing packages to have
-    | a conventional file to locate the various service credentials.
-    |
     */
 
     'postmark' => [
@@ -35,6 +29,13 @@ return [
         ],
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Ollama Engine (Local-first)
+    |--------------------------------------------------------------------------
+    | Efficient (Standard): Mistral + Nomic (768d)
+    | Elite (High-Precision): Qwen3 Suite (1056d)
+    */
     'ollama' => [
         'host' => env('OLLAMA_HOST', 'http://localhost:11434'),
         'model' => env('OLLAMA_DEFAULT_MODEL', 'mistral'),

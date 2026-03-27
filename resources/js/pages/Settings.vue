@@ -51,17 +51,15 @@ const isSettingsLocked = ref(true); // Locked by default for safety
 const foldersList = ref([...props.folders]);
 const pollInterval = ref<any>(null);
 
-// Check if recommended models are present in Ollama's local tags
-const isRecommendedLLMInstalled = computed(() => {
-    return props.models.some(m => m.name === props.recommended.llm);
-});
+// Check if models are present in Ollama's local tags
+const isRecommendedEfficientInstalled = computed(() => props.models.some(m => m.name === 'mistral' || m.name === 'mistral:latest'));
+const isRecommendedEfficientEmbeddingInstalled = computed(() => props.models.some(m => m.name === 'nomic-embed-text' || m.name === 'nomic-embed-text:latest'));
 
-const isRecommendedEmbeddingInstalled = computed(() => {
-    return props.models.some(m => m.name === props.recommended.embedding);
-});
+const isRecommendedEliteInstalled = computed(() => props.models.some(m => m.name === 'qwen3:8b' || m.name === 'qwen3:8b:latest'));
+const isRecommendedEliteEmbeddingInstalled = computed(() => props.models.some(m => m.name === 'qwen3-embedding:4b' || m.name === 'qwen3-embedding:4b:latest'));
 
 const showOnboardingWarning = computed(() => {
-    return !isRecommendedLLMInstalled.value || !isRecommendedEmbeddingInstalled.value;
+    return !isRecommendedEfficientInstalled.value || !isRecommendedEfficientEmbeddingInstalled.value;
 });
 
 // Check if ANY folder is currently indexing
@@ -105,7 +103,7 @@ const setComputeProfile = (profile: 'efficient' | 'elite') => {
     } else {
         form.llm_model = findBestMatch('qwen3:8b');
         form.embedding_model = findBestMatch('qwen3-embedding:4b');
-        form.embedding_dimensions = 2560;
+        form.embedding_dimensions = 1056;
     }
     isSettingsLocked.value = false;
 };
@@ -333,27 +331,43 @@ return;
 
                             <!-- 2. Normal Onboarding / Configuration UI -->
                             <template v-else>
-                                <div v-if="showOnboardingWarning" class="mb-6 p-4 rounded-2xl bg-indigo-500/5 border border-indigo-500/20 flex flex-col gap-3">
-                                <div class="flex items-center gap-2 text-indigo-600 dark:text-indigo-400">
-                                    <Info class="h-4 w-4" />
-                                    <span class="text-xs font-bold uppercase tracking-wider">Onboarding Recommendation</span>
-                                </div>
-                                <p class="text-[11px] text-muted-foreground leading-relaxed">
-                                    For the intended experience, we recommend pulling the following models via your terminal:
-                                </p>
-                                <div class="grid grid-cols-1 gap-2">
-                                    <div v-if="!isRecommendedLLMInstalled" class="p-2 rounded-xl bg-background border border-border/50 font-mono text-[10px] flex items-center justify-between">
-                                        <span class="opacity-70">ollama pull {{ recommended.llm }}</span>
-                                        <span class="text-[9px] font-bold text-indigo-500 uppercase">Assistant</span>
+                                <!-- Compute Profile Guide -->
+                                <div class="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col gap-4">
+                                    <div class="flex items-center gap-2 text-primary">
+                                        <Database class="h-4 w-4" />
+                                        <span class="text-xs font-bold uppercase tracking-wider">Ollama Model Guide</span>
                                     </div>
-                                    <div v-if="!isRecommendedEmbeddingInstalled" class="p-2 rounded-xl bg-background border border-border/50 font-mono text-[10px] flex items-center justify-between">
-                                        <span class="opacity-70">ollama pull {{ recommended.embedding }}</span>
-                                        <span class="text-[9px] font-bold text-indigo-500 uppercase">Embedding</span>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div class="space-y-2">
+                                            <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Efficient (Standard)</span>
+                                            <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
+                                                <div class="flex justify-between">
+                                                    <span class="opacity-70">ollama pull mistral</span>
+                                                    <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="opacity-70">ollama pull nomic-embed-text</span>
+                                                    <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="space-y-2">
+                                            <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Elite (High-Precision)</span>
+                                            <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
+                                                <div class="flex justify-between">
+                                                    <span class="opacity-70">ollama pull qwen3:8b</span>
+                                                    <ShieldCheck v-if="isRecommendedEliteInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                </div>
+                                                <div class="flex justify-between">
+                                                    <span class="opacity-70">ollama pull qwen3-embedding:4b</span>
+                                                    <ShieldCheck v-if="isRecommendedEliteEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <form @submit.prevent="submit" class="space-y-6">
+                                <form @submit.prevent="submit" class="space-y-6">
                                 
                                 <div v-if="isMemoryResetRequired && !isSettingsLocked" class="rounded-2xl bg-amber-500/5 p-4 border border-amber-500/20">
                                     <div class="flex gap-3">
