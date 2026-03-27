@@ -18,6 +18,10 @@ Route::middleware([])->group(function () {
                 'verticals_count' => \App\Models\Vertical::count(),
                 'folders_count' => \App\Models\ManagedFolder::count(),
                 'knowledge_count' => \App\Models\Knowledge::count(),
+                'latest_fragments' => \App\Models\Knowledge::on('nativephp')
+                    ->latest()
+                    ->limit(5)
+                    ->get(['content', 'type', 'metadata'])
             ]
         ]);
     })->name('dashboard');
