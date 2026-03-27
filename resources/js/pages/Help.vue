@@ -6,7 +6,7 @@ import axios from 'axios';
 import Button from '@/components/ui/button/Button.vue';
 import Markdown from '@/components/Markdown.vue';
 import { 
-    Send, Bot, User, HelpCircle,
+    Send, Bot, User, BrainCircuit,
     Loader2, Sparkles, Eraser
 } from 'lucide-vue-next';
 import { Input } from '@/components/ui/input';
@@ -21,7 +21,7 @@ interface Interaction {
 }
 
 const breadcrumbs = [
-    { title: 'System Help', href: '/help' },
+    { title: 'Sovereign Archivist', href: '/help' },
 ];
 
 /**
@@ -33,6 +33,7 @@ const isLoading = ref(false);
 const isClearing = ref(false);
 const isOllamaOnline = ref(true);
 const scrollAreaRef = ref<HTMLElement | null>(null);
+const statusMessage = ref('Ready');
 
 const checkOllamaStatus = async () => {
     try {
@@ -62,6 +63,7 @@ const sendMessage = async () => {
 
     newMessage.value = '';
     isLoading.value = true;
+    statusMessage.value = 'Searching Authorized Silos...';
     
     await scrollToBottom();
 
@@ -100,6 +102,7 @@ const sendMessage = async () => {
                     const data = JSON.parse(dataStr);
                     if (data.chunk) {
                         localInteractions.value[assistantIndex].content += data.chunk;
+                        statusMessage.value = 'Synthesizing...';
                         scrollToBottom();
                     }
                 } catch (e) {
@@ -112,6 +115,7 @@ const sendMessage = async () => {
         localInteractions.value[assistantIndex].content = 'Sorry, I encountered an error while processing your request.';
     } finally {
         isLoading.value = false;
+        statusMessage.value = 'Ready';
         await scrollToBottom();
     }
 };
@@ -138,7 +142,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <Head title="System Help" />
+    <Head title="Sovereign Archivist" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col h-[calc(100vh-65px)] bg-background max-w-4xl mx-auto w-full border-x border-border/40">
@@ -147,11 +151,11 @@ onMounted(() => {
             <div class="flex items-center justify-between px-6 py-4 border-b bg-background/50 backdrop-blur-md shrink-0">
                 <div class="flex items-center gap-3">
                     <div class="p-2 rounded-xl bg-primary/10 text-primary">
-                        <HelpCircle class="h-5 w-5" />
+                        <Bot class="h-5 w-5" />
                     </div>
                     <div>
-                        <h1 class="font-bold text-lg leading-none">System Guide</h1>
-                        <p class="text-[10px] text-muted-foreground uppercase tracking-widest mt-1 font-semibold opacity-70">Knowledge Base & Documentation</p>
+                        <h1 class="font-bold text-lg leading-none text-foreground/90">Sovereign Archivist</h1>
+                        <p class="text-[10px] text-muted-foreground uppercase tracking-widest mt-1 font-black opacity-40">System Intelligence & Global RAG</p>
                     </div>
                 </div>
                 
@@ -173,11 +177,11 @@ onMounted(() => {
             <!-- Chat Body -->
             <div ref="scrollAreaRef" class="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
                 <div v-if="localInteractions.length === 0" class="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
-                    <div class="p-4 rounded-3xl bg-muted mb-4">
-                        <Sparkles class="h-8 w-8 text-primary" />
+                    <div class="p-6 rounded-[2.5rem] bg-muted/40 mb-6 border border-border/40 shadow-inner">
+                        <BrainCircuit class="h-10 w-10 text-primary" />
                     </div>
-                    <h2 class="text-xl font-bold">Arkhein Intelligence</h2>
-                    <p class="text-sm max-w-xs mt-2 leading-relaxed">I am the System Guide. Ask me anything about the Vantage Hub, Memory Architecture, or configuration settings.</p>
+                    <h2 class="text-2xl font-black uppercase tracking-tighter">Arkhein Intelligence</h2>
+                    <p class="text-xs max-w-sm mt-3 leading-relaxed font-medium">I am the **Sovereign Archivist**. Ask me anything about the Vantage Hub, Memory Architecture, or search across your authorized silos.</p>
                 </div>
 
                 <div
@@ -187,8 +191,8 @@ onMounted(() => {
                     :class="interaction.role === 'user' ? 'items-end' : 'items-start'"
                 >
                     <div class="flex items-center gap-2 px-1">
-                        <span class="text-[9px] font-black uppercase tracking-widest opacity-30">
-                            {{ interaction.role === 'user' ? 'Operator' : 'System Guide' }}
+                        <span class="text-[9px] font-black uppercase tracking-[0.2em] opacity-30">
+                            {{ interaction.role === 'user' ? 'Operator' : 'Sovereign Archivist' }}
                         </span>
                     </div>
                     <div
@@ -204,13 +208,9 @@ onMounted(() => {
                     </div>
                 </div>
 
-                <div v-if="isLoading" class="flex items-center gap-3 animate-pulse px-4">
-                    <Bot class="h-4 w-4 opacity-30" />
-                    <div class="flex gap-1.5">
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce"></span>
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:0.2s]"></span>
-                        <span class="h-1.5 w-1.5 rounded-full bg-primary/40 animate-bounce [animation-delay:0.4s]"></span>
-                    </div>
+                <div v-if="isLoading" class="flex items-center gap-3 px-4">
+                    <Loader2 class="h-3 w-3 animate-spin text-primary opacity-50" />
+                    <span class="text-[9px] font-black uppercase tracking-widest opacity-30">{{ statusMessage }}</span>
                 </div>
             </div>
 
@@ -221,7 +221,7 @@ onMounted(() => {
                         <Input
                             v-model="newMessage"
                             @keydown.enter="sendMessage"
-                            placeholder="Query the system guide..."
+                            placeholder="Query the sovereign archive..."
                             :disabled="isLoading"
                             class="h-14 rounded-2xl border-border/40 bg-background pl-6 pr-14 shadow-inner focus-visible:ring-primary/20 transition-all group-hover:border-primary/30"
                         />

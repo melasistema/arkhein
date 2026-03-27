@@ -22,18 +22,18 @@ const mainNavItems: NavItem[] = [
         icon: LayoutGrid,
     },
     {
-        title: 'Vantage',
+        title: 'Vantage Hub',
         href: '/vantage',
         icon: LayoutDashboard,
+    },
+    {
+        title: 'Archivist',
+        href: '/help',
+        icon: MessageSquare,
     },
 ];
 
 const secondaryNavItems: NavItem[] = [
-    {
-        title: 'System Help',
-        href: '/help',
-        icon: HelpCircle,
-    },
     {
         title: 'Settings',
         href: settings.url(),
