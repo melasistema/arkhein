@@ -206,12 +206,19 @@ const sendQuery = async () => {
     const userMsg = query.value;
     messages.value.push({ role: 'user', content: userMsg });
     
-    // Add empty assistant message for streaming
+    // Create a reactive object for the assistant message
+    const assistantMessage = { 
+        role: 'assistant', 
+        content: '', 
+        status: 'Searching Knowledge...',
+        pending_actions: [] 
+    };
     const assistantIndex = messages.value.length;
-    messages.value.push({ role: 'assistant', content: '', status: 'Initializing...' });
+    messages.value.push(assistantMessage);
     
     query.value = '';
     isQuerying.value = true;
+    sources.value = []; // Clear previous sources for new context
     scrollToBottom();
 
     try {
@@ -255,22 +262,23 @@ const sendQuery = async () => {
                         messages.value[assistantIndex].status = 'Synthesizing...';
                         scrollToBottom();
                     } else if (event === 'completed' || event === 'final') {
-                        // Replace the temporary message with the finalized one from DB
-                        const interaction = data.interaction || data;
-                        if (data.response) interaction.content = data.response;
-                        if (data.pending_actions) interaction.pending_actions = data.pending_actions;
+                        // Fully replace with final record from DB for permanence (ID, timestamps, etc)
+                        const finalInteraction = data.interaction || data;
+                        if (data.response) finalInteraction.content = data.response;
+                        if (data.pending_actions) finalInteraction.pending_actions = data.pending_actions;
                         
-                        messages.value[assistantIndex] = interaction;
+                        messages.value[assistantIndex] = finalInteraction;
                         sources.value = data.sources || sources.value;
                     }
                 } catch (e) {
-                    // console.error("Error parsing Vantage stream chunk", e);
+                    // Silent fail for malformed JSON chunks
                 }
             }
         }
     } catch (e) {
         console.error("Arkhein Query Error", e);
-        messages.value[assistantIndex].content = "Analysis failed. Ensure the folder is indexed.";
+        messages.value[assistantIndex].content = "Analysis failed. Ensure the folder is indexed and Ollama is online.";
+        messages.value[assistantIndex].status = 'Error';
     } finally {
         isQuerying.value = false;
         scrollToBottom();

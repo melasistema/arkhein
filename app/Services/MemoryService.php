@@ -53,27 +53,39 @@ class MemoryService
         $folderId = $folderId ?? $this->currentFolderId;
         $this->setPartition($folderId);
 
+        // 1. Determine base query for this partition
+        $query = Knowledge::on('nativephp');
+        if ($folderId) {
+            $query->where('metadata->folder_id', $folderId);
+        }
+
+        // 2. If dimensions not provided, try to detect from existing data in DB
+        // This is the CRITICAL fix for "First Prompt Re-indexing"
+        if ($dimensions === null) {
+            $firstItem = (clone $query)->first();
+            if ($firstItem && !empty($firstItem->embedding)) {
+                $dimensions = count($firstItem->embedding);
+                Log::debug("Arkhein Vektor: Detected dimensions from SSOT: {$dimensions}");
+            }
+        }
+
+        // 3. Fallback to settings/config
         $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+        
         Config::setDimensions($dimensions);
 
         $path = $this->getPartitionPath($folderId);
         $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
         
         if (!File::exists($vectorFile) || filesize($vectorFile) === 0) {
-            $query = Knowledge::on('nativephp');
-            if ($folderId) {
-                $query->where('metadata->folder_id', $folderId);
-            }
-            // For global (null), we don't apply a where clause, indexing EVERYTHING.
-
             if ($query->count() > 0) {
-                Log::info("Arkhein: Binary index missing for partition [{$folderId}]. Rebuilding...");
+                Log::info("Arkhein: Binary index missing for partition [{$folderId}]. Rebuilding with detected {$dimensions} dimensions...");
                 return $this->rebuildIndex($dimensions, $folderId);
             }
         }
 
         if ($this->isMismatched($vectorFile, $dimensions)) {
-            Log::warning("Arkhein: Dimension mismatch for partition [{$folderId}]. Rebuilding...");
+            Log::warning("Arkhein: Dimension mismatch for partition [{$folderId}] (Expected {$dimensions}). Rebuilding...");
             return $this->rebuildIndex($dimensions, $folderId);
         }
 
@@ -96,7 +108,7 @@ class MemoryService
     /**
      * Rebuild the aggregate global index from all authorized knowledge.
      */
-    public function rebuildGlobalIndex(int $dimensions): bool
+    public function rebuildGlobalIndex(?int $dimensions = null): bool
     {
         return $this->rebuildIndex($dimensions, null);
     }
@@ -104,10 +116,13 @@ class MemoryService
     /**
      * Rebuild Vektor from Knowledge base for a specific partition.
      */
-    public function rebuildIndex(int $dimensions, ?int $folderId = null, ?\App\Models\ManagedFolder $folder = null): bool
+    public function rebuildIndex(?int $dimensions = null, ?int $folderId = null, ?\App\Models\ManagedFolder $folder = null): bool
     {
         $folderId = $folderId ?? $this->currentFolderId;
         $this->setPartition($folderId);
+
+        // Fetch dimensions from settings if not provided
+        $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
 
         return $this->withRebuildLock($folderId, function () use ($dimensions, $folderId, $folder) {
             Log::info("Arkhein: Rebuilding Vektor index for partition [{$folderId}]. Dimensions: $dimensions");
@@ -137,7 +152,13 @@ class MemoryService
                             $embedding = json_decode($embedding, true);
                         }
 
-                        if (!is_array($embedding) || count($embedding) !== $dimensions) continue;
+                        if (!is_array($embedding)) continue;
+
+                        // IMPORTANT: Log mismatch instead of just skipping silently
+                        if (count($embedding) !== $dimensions) {
+                            Log::warning("Arkhein Vektor: Dimension mismatch for item {$item->id}. DB: " . count($embedding) . " | Expected: {$dimensions}");
+                            continue;
+                        }
 
                         $indexer->insert($item->id, $embedding);
                         $processed++;
