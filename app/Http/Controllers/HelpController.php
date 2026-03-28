@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use App\Services\OllamaService;
 use App\Services\PromptService;
@@ -18,8 +19,8 @@ class HelpController extends Controller
     }
 
     public function send(
-        Request $request, 
-        OllamaService $ollama, 
+        Request $request,
+        OllamaService $ollama,
         PromptService $prompts,
         \App\Services\GlobalRagService $rag
     ) {
@@ -28,7 +29,13 @@ class HelpController extends Controller
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
-        $knowledge = $rag->recall($input, 10);
+        // 1. Analyze Intent: SYSTEM, DATA, or BOTH
+        $intent = $this->analyzeHelpIntent($input, $ollama);
+        Log::info("Arkhein Archivist: Help Intent -> {$intent}");
+
+        // 2. Conditional RAG
+        $knowledge = ($intent === 'DATA' || $intent === 'BOTH') ? $rag->recall($input, 10) : [];
+
         $messages = $this->buildChatPayload($prompts, $knowledge, $input);
         $assistantMessage = $ollama->chat($messages);
 
@@ -40,17 +47,23 @@ class HelpController extends Controller
     }
 
     public function stream(
-        Request $request, 
-        OllamaService $ollama, 
+        Request $request,
+        OllamaService $ollama,
         PromptService $prompts,
         \App\Services\GlobalRagService $rag
     ) {
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
-        
+
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
-        $knowledge = $rag->recall($input, 10);
+        // 1. Analyze Intent
+        $intent = $this->analyzeHelpIntent($input, $ollama);
+        Log::info("Arkhein Archivist: Help Intent (Stream) -> {$intent}");
+
+        // 2. Conditional RAG
+        $knowledge = ($intent === 'DATA' || $intent === 'BOTH') ? $rag->recall($input, 10) : [];
+
         $messages = $this->buildChatPayload($prompts, $knowledge, $input);
 
         return response()->stream(function () use ($ollama, $messages) {
@@ -73,10 +86,42 @@ class HelpController extends Controller
         ]);
     }
 
+    protected function analyzeHelpIntent(string $input, OllamaService $ollama): string
+    {
+        // Simple heuristics first
+        $inputLower = strtolower($input);
+
+        // If they ask about "Arkhein", "Software", "Commands", "How to", "Help", "System"
+        $systemKeywords = ['arkhein', 'software', 'command', 'how to', 'settings', 'config', 'vantage hub', 'archivist', 'memory', 'ollama'];
+        $mentionsSystem = false;
+        foreach ($systemKeywords as $kw) { if (str_contains($inputLower, $kw)) { $mentionsSystem = true; break; } }
+
+        // If they ask about "My files", "Document", "Project", or specific topics found via a quick heuristic
+        // We will default to BOTH if it's ambiguous, but if it's clearly about software help, we stay SYSTEM.
+
+        $prompt = "Classify the following query into one of three categories:
+        - 'SYSTEM': User is asking for help with Arkhein software, features, commands, or settings.
+        - 'DATA': User is asking about their own files, documents, or content indexed in their folders.
+        - 'BOTH': Query involves both system features and user data.
+
+        QUERY: \"{$input}\"
+
+        Respond with ONLY the category name (SYSTEM, DATA, or BOTH).";
+
+        $response = trim($ollama->generate($prompt));
+
+        // Fallback to heuristic if LLM fails or gives weird output
+        if (!in_array($response, ['SYSTEM', 'DATA', 'BOTH'])) {
+            return $mentionsSystem ? 'SYSTEM' : 'BOTH';
+        }
+
+        return $response;
+    }
+
     protected function saveUserMessage(string $content)
     {
         HelpInteraction::create([
-            'role' => 'user', 
+            'role' => 'user',
             'content' => $content
         ]);
     }
@@ -92,11 +137,11 @@ class HelpController extends Controller
     protected function buildChatPayload(PromptService $prompts, array $knowledge = [], ?string $currentQuery = null): array
     {
         $history = HelpInteraction::latest()->limit(10)->get()->reverse();
-        
+
         // Gather Workspace Metadata
         $folders = \App\Models\ManagedFolder::all()->map(fn($f) => "- {$f->name} (Path: {$f->path})")->implode("\n");
         $verticals = \App\Models\Vertical::all()->map(fn($v) => "- {$v->name} (Connected to: {$v->folder?->name})")->implode("\n");
-        
+
         $metadata = "### CURRENT WORKSPACE MAP:\n";
         $metadata .= "Authorized Folders:\n" . ($folders ?: "None") . "\n\n";
         $metadata .= "Active Vantage Cards:\n" . ($verticals ?: "None") . "\n";
@@ -104,7 +149,7 @@ class HelpController extends Controller
         $systemPrompt = $prompts->buildHelpPrompt() . "\n\n" . $metadata;
 
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
-        
+
         // Add history (except the last message if we are going to append knowledge to it)
         $historyItems = $history->values();
         for ($i = 0; $i < count($historyItems) - ($currentQuery ? 1 : 0); $i++) {
