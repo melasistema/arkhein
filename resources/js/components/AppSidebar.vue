@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, LayoutDashboard, MessageSquare, Settings, HelpCircle } from 'lucide-vue-next';
+import { LayoutGrid, LayoutDashboard, MessageSquare, Settings, Globe, BookOpen } from 'lucide-vue-next';
 import AppLogo from '@/components/AppLogo.vue';
 import NavMain from '@/components/NavMain.vue';
 import {
@@ -15,12 +15,15 @@ import {
 import { dashboard, settings } from '@/routes';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
+const dashboardItem: NavItem[] = [
     {
         title: 'Dashboard',
         href: dashboard.url(),
         icon: LayoutGrid,
     },
+];
+
+const operationsItems: NavItem[] = [
     {
         title: 'Vantage Hub',
         href: '/vantage',
@@ -33,7 +36,7 @@ const mainNavItems: NavItem[] = [
     },
 ];
 
-const secondaryNavItems: NavItem[] = [
+const settingsItem: NavItem[] = [
     {
         title: 'Settings',
         href: settings.url(),
@@ -41,23 +44,23 @@ const secondaryNavItems: NavItem[] = [
     },
 ];
 
-const footerNavItems: NavItem[] = [
+const officialLinks: NavItem[] = [
     {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: FolderGit2,
+        title: 'Website',
+        href: 'https://arkhein.melasistema.com',
+        icon: Globe,
     },
     {
         title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
+        href: 'https://docs.arkhein.melasistema.com',
         icon: BookOpen,
     },
 ];
 </script>
 
 <template>
-    <Sidebar collapsible="icon" variant="inset">
-        <SidebarHeader>
+    <Sidebar collapsible="icon" variant="inset" class="gap-4">
+        <SidebarHeader class="pb-6">
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
@@ -69,12 +72,14 @@ const footerNavItems: NavItem[] = [
             </SidebarMenu>
         </SidebarHeader>
 
-        <SidebarContent>
-            <NavMain :items="mainNavItems" />
+        <SidebarContent class="gap-4">
+            <NavMain :items="dashboardItem" />
+            <NavMain :items="operationsItems" title="Operations" />
         </SidebarContent>
 
-        <SidebarFooter>
-            <NavMain :items="secondaryNavItems" />
+        <SidebarFooter class="gap-2">
+            <NavMain :items="settingsItem" title="Arkhein" />
+            <NavMain :items="officialLinks" />
         </SidebarFooter>
     </Sidebar>
     <slot />

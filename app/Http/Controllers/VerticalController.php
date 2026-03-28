@@ -34,17 +34,17 @@ class VerticalController extends Controller
 
         // Add Artistic Greeting
         $folder = ManagedFolder::find($validated['folder_id']);
+        // 2. Add Welcome Message
         $vertical->interactions()->create([
             'role' => 'assistant',
-            'content' => "### 💠 Neural Link Established: **{$folder->name}**\n\n" .
-                "I have connected to this workspace and am currently mapping its architecture. You can now perform deep document queries or use **Magic Commands** to operate on files.\n\n" .
+            'content' => "### 💠 Silo Connection Established: {$folder->name}\n\n" .
+                "I have mapped the architecture of this authorized silo. You can now perform deep document queries or use **Magic Commands** to operate on your files.\n\n" .
                 "**Quick Start:**\n" .
-                "- Ask: *\"Summarize the most recent documents here\"*\n" .
-                "- Type `/` to see available system commands.\n" .
-                "- Use `@` to mention specific contexts.\n\n" .
+                "- Type `/help` to see all available magic commands.\n" .
+                "- Ask: *\"Summarize the core purpose of the documents here.\"*\n" .
+                "- Use `/create [filename]` to draft new files from your knowledge.\n\n" .
                 "How shall we begin our analysis?"
         ]);
-
         return response()->json($vertical);
     }
 

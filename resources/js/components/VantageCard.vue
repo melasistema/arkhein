@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import axios from 'axios';
-import { 
-    FolderSearch, RefreshCcw, Send, Loader2, Bot, User, 
+import {
+    FolderSearch, RefreshCcw, Send, Loader2, Bot, User,
     FileText, Search, Database, HardDrive, Trash2, Eraser,
     Folder, CheckCircle, ExternalLink
 } from 'lucide-vue-next';
@@ -46,10 +46,10 @@ const scrollAreaRef = ref<any>(null);
 const getActions = (msg: any) => {
     // Priority 1: Direct property (for new messages)
     if (msg.pending_actions && Array.isArray(msg.pending_actions)) return msg.pending_actions;
-    
+
     // Priority 2: Parsed metadata (for historical messages)
     if (!msg.metadata) return [];
-    
+
     let meta = msg.metadata;
     try {
         // Double-string recursive parsing for SQLite robustness
@@ -94,14 +94,14 @@ const confirmAction = async (interaction: any, action: any) => {
             // Update metadata for persistence
             let meta = typeof interaction.metadata === 'string' ? JSON.parse(interaction.metadata) : interaction.metadata;
             if (meta && meta.pending_actions) {
-                meta.pending_actions = meta.pending_actions.map((a: any) => 
+                meta.pending_actions = meta.pending_actions.map((a: any) =>
                     a.id === action.id ? { ...a, status: 'executed' } : a
                 );
                 interaction.metadata = meta;
             }
             // Update direct property for immediate UI
             if (interaction.pending_actions) {
-                interaction.pending_actions = interaction.pending_actions.map((a: any) => 
+                interaction.pending_actions = interaction.pending_actions.map((a: any) =>
                     a.id === action.id ? { ...a, status: 'executed' } : a
                 );
             }
@@ -205,17 +205,17 @@ const sendQuery = async () => {
     if (!query.value.trim() || isQuerying.value) return;
     const userMsg = query.value;
     messages.value.push({ role: 'user', content: userMsg });
-    
+
     // Create a reactive object for the assistant message
-    const assistantMessage = { 
-        role: 'assistant', 
-        content: '', 
+    const assistantMessage = {
+        role: 'assistant',
+        content: '',
         status: 'Searching Knowledge...',
-        pending_actions: [] 
+        pending_actions: []
     };
     const assistantIndex = messages.value.length;
     messages.value.push(assistantMessage);
-    
+
     query.value = '';
     isQuerying.value = true;
     sources.value = []; // Clear previous sources for new context
@@ -252,7 +252,7 @@ const sendQuery = async () => {
 
                 try {
                     const { event, data } = JSON.parse(dataStr);
-                    
+
                     if (event === 'status') {
                         messages.value[assistantIndex].status = data;
                     } else if (event === 'sources') {
@@ -266,7 +266,7 @@ const sendQuery = async () => {
                         const finalInteraction = data.interaction || data;
                         if (data.response) finalInteraction.content = data.response;
                         if (data.pending_actions) finalInteraction.pending_actions = data.pending_actions;
-                        
+
                         messages.value[assistantIndex] = finalInteraction;
                         sources.value = data.sources || sources.value;
                     }
@@ -287,7 +287,7 @@ const sendQuery = async () => {
 </script>
 
 <template>
-    <Card class="flex flex-col h-[520px] shadow-sm border-sidebar-border/70 dark:border-sidebar-border transition-all hover:border-primary/20 bg-card overflow-visible">
+    <Card class="flex flex-col h-[750px] shadow-sm border-sidebar-border/70 dark:border-sidebar-border transition-all hover:border-primary/20 bg-card overflow-visible">
         <!-- 1. Selection State -->
         <template v-if="!currentVertical">
             <div class="overflow-hidden flex flex-col h-full">
@@ -355,17 +355,38 @@ const sendQuery = async () => {
             <CardContent class="flex-1 p-0 overflow-hidden relative flex flex-col min-h-0">
                 <ScrollArea ref="scrollAreaRef" class="h-full w-full">
                     <div class="px-4 py-4 min-h-full flex flex-col gap-4">
-                        <div v-if="messages.length === 0" class="h-32 flex flex-col items-center justify-center text-center opacity-40 mt-12">
-                            <FileText class="h-8 w-8 mb-2" />
-                            <p class="text-[11px] font-medium italic">Ask anything about the documents in this folder.</p>
+                        <!-- Empty State / Introduction -->
+                        <div v-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center text-center py-12 px-6">
+                            <div class="p-4 rounded-3xl bg-primary/5 mb-4 shadow-inner">
+                                <Sparkles class="h-8 w-8 text-primary opacity-40" />
+                            </div>
+                            <h3 class="text-sm font-bold uppercase tracking-widest opacity-80 mb-2">Vantage Intelligence Active</h3>
+                            <p class="text-[11px] text-muted-foreground leading-relaxed max-w-[240px] italic mb-6">
+                                Ask anything about the documents in this silo, or use Magic Commands to command your silicon.
+                            </p>
+                            
+                            <div class="grid grid-cols-1 gap-2 w-full max-w-[280px]">
+                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
+                                    <span class="text-[10px] font-black text-primary">/help</span>
+                                    <span class="text-[9px] opacity-60 italic">See all magic commands available in this silo.</span>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
+                                    <span class="text-[10px] font-black text-primary">/create [filename]</span>
+                                    <span class="text-[9px] opacity-60 italic">Deep Creation: Generate files from your knowledge.</span>
+                                </div>
+                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
+                                    <span class="text-[10px] font-black text-primary">/organize</span>
+                                    <span class="text-[9px] opacity-60 italic">Silo Structuring: Group files by thematic relevance.</span>
+                                </div>
+                            </div>
                         </div>
-                        
+
                         <div v-for="(msg, idx) in messages" :key="msg.id || idx" class="flex flex-col gap-1">
                             <div class="flex items-center gap-1.5 mb-1" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
                                 <span v-if="msg.role === 'assistant'" class="text-[9px] font-bold uppercase tracking-wider opacity-30">ARKHEIN VANTAGE</span>
                                 <span v-else class="text-[9px] font-bold uppercase tracking-wider opacity-30">USER</span>
                             </div>
-                            <div 
+                            <div
                                 class="text-xs p-3 rounded-2xl leading-relaxed"
                                 :class="msg.role === 'user' ? 'bg-primary text-primary-foreground ml-8 rounded-tr-none shadow-sm whitespace-pre-wrap' : 'bg-muted/50 border border-border/50 mr-8 rounded-tl-none'"
                             >
@@ -388,9 +409,9 @@ const sendQuery = async () => {
                                                 {{ getPendingCount(msg) }} Operations Pending
                                             </span>
                                         </div>
-                                        <Button 
-                                            size="sm" 
-                                            variant="default" 
+                                        <Button
+                                            size="sm"
+                                            variant="default"
                                             class="h-7 text-[10px] px-4 font-bold shadow-sm"
                                             @click="confirmAll(msg)"
                                         >
@@ -398,7 +419,7 @@ const sendQuery = async () => {
                                         </Button>
                                     </div>
 
-                                    <div v-for="(action, aIdx) in getActions(msg)" :key="action.id || aIdx" 
+                                    <div v-for="(action, aIdx) in getActions(msg)" :key="action.id || aIdx"
                                         class="flex flex-col p-2 rounded-xl bg-background/50 border border-border/40 shadow-sm"
                                         :class="{ 'opacity-40 grayscale-[0.5]': action.status === 'executed' }"
                                     >
@@ -414,11 +435,11 @@ const sendQuery = async () => {
                                                     <span class="text-[9px] truncate opacity-60">{{ action.description }}</span>
                                                 </div>
                                             </div>
-                                            
-                                            <Button 
+
+                                            <Button
                                                 v-if="action.status !== 'executed'"
-                                                size="sm" 
-                                                variant="outline" 
+                                                size="sm"
+                                                variant="outline"
                                                 class="h-7 text-[10px] px-3 font-bold border-primary/20 hover:bg-primary/5 text-primary"
                                                 :disabled="isExecutingAction[action.id]"
                                                 @click="confirmAction(msg, action)"
@@ -456,9 +477,9 @@ const sendQuery = async () => {
 
             <CardFooter class="p-3 border-t bg-background shrink-0">
                 <div class="flex w-full items-center gap-2">
-                    <CommandInput 
-                        v-model="query" 
-                        placeholder="Query documents... (try /help)" 
+                    <CommandInput
+                        v-model="query"
+                        placeholder="Query documents... (try /help)"
                         :disabled="isQuerying"
                         @submit="sendQuery"
                     />

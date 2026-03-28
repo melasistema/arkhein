@@ -15,6 +15,8 @@ Deep complexity hidden behind a minimalist shell. Command your machine. Own your
 - **Website:** [arkhein.melasistema.com](https://arkhein.melasistema.com/)
 - **Documentation:** [docs.arkhein.melasistema.com](https://docs.arkhein.melasistema.com/)
 
+![Arkhein Settings](resources/images/arkhein-settings.png)
+
 ## The Architecture of Sovereignty
 
 ### The Vantage Hub (Verticalized Intelligence)
