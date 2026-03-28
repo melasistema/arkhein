@@ -156,16 +156,27 @@ class HelpController extends Controller
     {
         $history = HelpInteraction::latest()->limit(8)->get()->reverse();
         
-        $systemDocs = ($strategy['intent'] !== 'DATA') ? $prompts->buildHelpPrompt() : "You are the Sovereign Archivist. Answer questions based on provided user data.";
+        // 1. Workspace Map (Awareness of Authorized Folders)
+        $folders = \App\Models\ManagedFolder::all()->map(fn($f) => "- {$f->name} (Path: {$f->path})")->implode("\n");
+        $workspaceMetadata = "### CURRENT WORKSPACE MAP:\n" . ($folders ?: "No folders authorized.") . "\n\n";
+
+        // 2. Base Persona & Docs
+        $basePrompt = ($strategy['intent'] !== 'DATA') 
+            ? $prompts->buildHelpPrompt() 
+            : "You are the Sovereign Archivist. Answer questions based on provided user data.";
         
-        $prompt = "{$systemDocs}\n\n";
+        $prompt = "{$basePrompt}\n\n{$workspaceMetadata}";
         
+        // 3. User Data / RAG
         if (!empty($knowledge)) {
             $prompt .= "### AUTHORIZED USER DATA:\n";
             foreach ($knowledge as $k) {
                 $source = $k['metadata']['filename'] ?? 'unknown';
                 $prompt .= "[Source: {$source}]\nContent: " . $k['content'] . "\n\n";
             }
+        } else if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
+            $prompt .= "### AUTHORIZED USER DATA: [EMPTY]\n";
+            $prompt .= "CRITICAL: No matching documents found in authorized silos. You MUST inform the user that you cannot find this information in their files.";
         }
 
         $messages = [['role' => 'system', 'content' => $prompt]];
