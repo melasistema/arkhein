@@ -9,6 +9,7 @@ use Centamiv\Vektor\Services\Indexer;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
+use Native\Laravel\Facades\Notification;
 
 class ReconcileMemoryJob implements ShouldQueue
 {
@@ -36,13 +37,14 @@ class ReconcileMemoryJob implements ShouldQueue
             Log::info("Arkhein Reconcile: Initializing shadow rebuild for partition [" . ($this->folderId ?? 'global') . "]");
             $memory->prepareShadow($this->folderId);
             
-            $query = Knowledge::on('nativephp');
+            // Use query builder for maximum connection stability in background
+            $query = \Illuminate\Support\Facades\DB::connection('nativephp')->table('knowledge');
             if ($this->folderId) {
-                $query->where('metadata->folder_id', $this->folderId);
+                $query->where('metadata', 'LIKE', '%"folder_id":' . $this->folderId . '%');
             }
             
             $this->total = $query->count();
-            Log::info("Arkhein Reconcile: Total items to process: " . $this->total);
+            Log::info("Arkhein Reconcile: Found total items in SSOT: " . $this->total);
             
             Setting::set('system_reconcile_progress', 0);
             Setting::set('system_reconcile_status', 'running');
@@ -53,9 +55,9 @@ class ReconcileMemoryJob implements ShouldQueue
         $indexer = new Indexer();
 
         // 3. Process Batch
-        $query = Knowledge::on('nativephp');
+        $query = \Illuminate\Support\Facades\DB::connection('nativephp')->table('knowledge');
         if ($this->folderId) {
-            $query->where('metadata->folder_id', $this->folderId);
+            $query->where('metadata', 'LIKE', '%"folder_id":' . $this->folderId . '%');
         }
         
         $items = $query->orderBy('created_at', 'asc')
@@ -63,19 +65,33 @@ class ReconcileMemoryJob implements ShouldQueue
             ->limit($this->batchSize)
             ->get();
 
-        Log::info("Arkhein Reconcile: Processing batch [" . ($this->offset) . " to " . ($this->offset + $items->count()) . "]");
+        Log::info("Arkhein Reconcile: Fetched " . $items->count() . " items for batch starting at " . $this->offset);
+
+        $inserted = 0;
+        $skipped = 0;
 
         foreach ($items as $item) {
             $embedding = $item->embedding;
             if (is_string($embedding)) $embedding = json_decode($embedding, true);
-            if (!is_array($embedding) || count($embedding) !== $dimensions) continue;
+            
+            if (!is_array($embedding) || count($embedding) !== $dimensions) {
+                $skipped++;
+                // Log the FIRST mismatch to avoid log flooding but still provide a hint
+                if ($this->offset === 0 && $item === $items->first()) {
+                    Log::warning("Arkhein Reconcile: Dimension mismatch example. Item ID: {$item->id} | Got: " . (is_array($embedding) ? count($embedding) : 'null') . " | Expected: {$dimensions}");
+                }
+                continue;
+            }
 
             try {
                 $indexer->insert($item->id, $embedding);
+                $inserted++;
             } catch (\Throwable $e) {
-                // Silently skip corrupted items in binary index during reconcile
+                // Skip
             }
         }
+
+        Log::info("Arkhein Reconcile: Batch Result -> Inserted: {$inserted}, Skipped: {$skipped}");
 
         $processed = $this->offset + $items->count();
         $progress = ($this->total > 0) ? (int) (($processed / $this->total) * 100) : 100;
@@ -84,6 +100,7 @@ class ReconcileMemoryJob implements ShouldQueue
 
         // 4. Chain next batch or finalize
         if ($processed < $this->total && $items->count() > 0) {
+            Log::info("Arkhein Reconcile: Dispatching next batch at offset {$processed}");
             dispatch(new self($this->folderId, $processed, $this->batchSize, $this->total))
                 ->onConnection('background');
         } else {
@@ -92,6 +109,11 @@ class ReconcileMemoryJob implements ShouldQueue
             Setting::set('system_reconcile_progress', 100);
             Setting::set('system_reconcile_status', 'idle');
             Setting::set('system_reconcile_last_at', now()->toDateTimeString());
+
+            Notification::new()
+                ->title('Memory Reconciled')
+                ->message('The aggregate vector index has been optimized and synchronized.')
+                ->show();
         }
     }
 }

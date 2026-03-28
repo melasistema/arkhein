@@ -137,9 +137,9 @@ class SettingsController extends Controller
 
     public function removeFolder(ManagedFolder $folder, MemoryService $memory)
     {
-        Log::info("Arkhein: De-authorizing folder @{$folder->name}. Purging all associated knowledge and cards.");
+        Log::info("Arkhein: De-authorizing folder @{$folder->name}. Purging all associated knowledge and binary silos.");
 
-        // 1. Purge all Knowledge chunks from RAG index and binary Vektor
+        // 1. Purge all Knowledge chunks from RAG index and binary Vektor silos
         $memory->purgeFolderKnowledge($folder->id);
 
         // 2. Delete all Vantage cards (Verticals) referencing this folder
@@ -147,6 +147,10 @@ class SettingsController extends Controller
 
         // 3. Remove the managed folder authority
         $folder->delete();
+
+        // 4. Trigger Global Reconciliation to sync aggregate memory
+        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+        $memory->rebuildGlobalIndex($dimensions);
 
         return back();
     }

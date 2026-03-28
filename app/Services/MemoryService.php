@@ -18,6 +18,7 @@ class MemoryService
     public function __construct()
     {
         $this->basePath = storage_path('app/vektor');
+        Log::info("Arkhein Vektor: Initializing at " . $this->basePath);
         $this->setPartition(null);
     }
 
@@ -31,10 +32,13 @@ class MemoryService
         $path = $this->getPartitionPath($folderId, $shadow);
 
         if (!File::isDirectory($path)) {
+            Log::info("Arkhein Vektor: Creating directory " . $path);
             File::makeDirectory($path, 0755, true);
         }
 
-        Config::setDataDir($path);
+        $absolutePath = (string) realpath($path);
+        Log::info("Arkhein Vektor: Directing Vektor to " . $absolutePath . " (Shadow: " . ($shadow ? 'YES' : 'NO') . ")");
+        Config::setDataDir($absolutePath);
         return $this;
     }
 
@@ -52,10 +56,20 @@ class MemoryService
     public function prepareShadow(?int $folderId): string
     {
         $path = $this->getPartitionPath($folderId, true);
-        if (File::isDirectory($path)) {
+        
+        if (File::exists($path)) {
             File::deleteDirectory($path);
         }
-        File::makeDirectory($path, 0755, true);
+        
+        // Use PHP native mkdir for immediate OS feedback
+        if (!mkdir($path, 0755, true)) {
+            Log::error("Arkhein Vektor: Failed to create shadow directory at {$path}");
+            throw new \RuntimeException("Could not create shadow partition.");
+        }
+
+        // IMPORTANT: Force Vektor to look here immediately
+        Config::setDataDir($path);
+        
         return $path;
     }
 
@@ -170,8 +184,10 @@ class MemoryService
             $this->clearBinaryFiles($folderId);
             Config::setDimensions($dimensions);
 
-            $indexer = new Indexer();
-            $query = Knowledge::on('nativephp');
+            // CRITICAL: Ensure directory exists and Vektor knows about it
+            $this->setPartition($folderId);
+
+            $indexer = new Indexer();            $query = Knowledge::on('nativephp');
 
             if ($folderId) {
                 $query->where('metadata->folder_id', $folderId);
@@ -213,6 +229,15 @@ class MemoryService
                     }
                 }
             });
+
+            // Final check: did files appear?
+            $path = Config::getDataDir();
+            $vecFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
+            if (File::exists($vecFile)) {
+                Log::info("Arkhein Vektor: Binary index verified at {$vecFile}. Size: " . filesize($vecFile) . " bytes.");
+            } else {
+                Log::error("Arkhein Vektor: FAILED to create binary index at {$vecFile}. Path attempted: " . $path);
+            }
 
             return true;
         });
@@ -270,12 +295,14 @@ class MemoryService
             // 2. Index in Folder Partition (if applicable)
             if ($folderId) {
                 $this->ensureIndex(count($embedding), $folderId);
+                $this->setPartition($folderId); // CRITICAL
                 $indexer = new Indexer();
                 $indexer->insert($id, $embedding);
             }
 
             // 3. Index in Global Partition (Aggregate)
             $this->ensureIndex(count($embedding), null);
+            $this->setPartition(null); // CRITICAL
             $indexer = new Indexer();
             $indexer->insert($id, $embedding);
 
@@ -299,6 +326,7 @@ class MemoryService
 
         try {
             $this->ensureIndex(count($vector), $folderId);
+            $this->setPartition($folderId); // CRITICAL
             $searcher = new Searcher();
             $results = $searcher->search($vector, $limit);
 
