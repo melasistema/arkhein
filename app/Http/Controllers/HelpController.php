@@ -169,10 +169,21 @@ class HelpController extends Controller
         
         // 3. User Data / RAG
         if (!empty($knowledge)) {
-            $prompt .= "### AUTHORIZED USER DATA:\n";
+            $prompt .= "### RELEVANT DOCUMENTATION (AUTHORIZED USER DATA):\n";
+            $currentSource = '';
             foreach ($knowledge as $k) {
-                $source = $k['metadata']['filename'] ?? 'unknown';
-                $prompt .= "[Source: {$source}]\nContent: " . $k['content'] . "\n\n";
+                $sourceName = $k['metadata']['filename'] ?? 'unknown';
+                $folderName = $k['metadata']['folder_name'] ?? 'Silo';
+                $subfolder = $k['vessel']['subfolder'] ?? '';
+                $summary = $k['vessel']['summary'] ?? '';
+
+                if ($currentSource !== $sourceName) {
+                    $prompt .= "--- SOURCE: {$folderName} > " . ($subfolder ? "{$subfolder} > " : "") . "{$sourceName} ---\n";
+                    if ($summary) $prompt .= "DOCUMENT SUMMARY: {$summary}\n";
+                    $currentSource = $sourceName;
+                }
+                
+                $prompt .= "FRAGMENT: " . $k['content'] . "\n\n";
             }
         } else if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
             $prompt .= "### AUTHORIZED USER DATA: [EMPTY]\n";

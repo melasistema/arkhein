@@ -128,7 +128,7 @@ class SettingsController extends Controller
                 ['name' => basename($path)]
             );
 
-            // AUTO-INDEX after authorization
+            // Automatically trigger indexing for the new silo
             \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
         }
 
@@ -157,7 +157,7 @@ class SettingsController extends Controller
 
     public function rebuild()
     {
-        // Dispatch the unbreakable batched job for Global partition
+        // Dispatch the unbreakable batched job for Global partition using background worker
         \App\Jobs\ReconcileMemoryJob::dispatch(null)->onConnection('background');
 
         return response()->json(['success' => true]);

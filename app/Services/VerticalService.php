@@ -275,8 +275,23 @@ class VerticalService
 
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
         foreach ($history as $msg) { $messages[] = ['role' => $msg->role, 'content' => $msg->content]; }
-        $ctx = "### KNOWLEDGE:\n";
-        foreach ($knowledge as $item) { $ctx .= "- " . $item['content'] . "\n\n"; }
+        
+        $ctx = "### KNOWLEDGE (AUTHORIZED USER DATA):\n";
+        $currentSource = '';
+        foreach ($knowledge as $item) { 
+            $sourceName = $item['metadata']['filename'] ?? 'unknown';
+            $subfolder = $item['vessel']['subfolder'] ?? '';
+            $summary = $item['vessel']['summary'] ?? '';
+
+            if ($currentSource !== $sourceName) {
+                $ctx .= "--- SOURCE: " . ($subfolder ? "{$subfolder} > " : "") . "{$sourceName} ---\n";
+                if ($summary) $ctx .= "DOCUMENT SUMMARY: {$summary}\n";
+                $currentSource = $sourceName;
+            }
+            
+            $ctx .= "FRAGMENT: " . $item['content'] . "\n\n";
+        }
+        
         $messages[] = ['role' => 'user', 'content' => "{$ctx}\n\nQuery: {$query}"];
         return $messages;
     }

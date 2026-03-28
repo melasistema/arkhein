@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ManagedFolder;
 use App\Models\Knowledge;
 use App\Models\Setting;
+use App\Models\Document;
 use App\Services\Extractors\ExtractorInterface;
 use App\Services\Extractors\TextExtractor;
 use App\Services\Extractors\PdfExtractor;
@@ -48,9 +49,8 @@ class ArchiveService
         Log::info("Arkhein: Starting " . ($forceFull ? 'FULL' : 'INCREMENTAL') . " index for @{$folder->name}");
 
         if ($forceFull) {
-            Knowledge::on('nativephp')->where('type', 'file')
-                ->where('metadata->folder_id', $folder->id)
-                ->delete();
+            Knowledge::on('nativephp')->where('metadata->folder_id', $folder->id)->delete();
+            Document::where('folder_id', $folder->id)->delete();
         }
 
         $files = File::allFiles($folder->path);
@@ -66,16 +66,16 @@ class ArchiveService
         ]);
 
         foreach ($files as $index => $file) {
-            $filename = $file->getRelativePathname();
+            $relativePath = $file->getRelativePathname();
             
             // Phase 1: 0% -> 90% (Processing files and getting embeddings)
             $progress = (int) (($index / $totalFiles) * 90);
             $folder->update([
                 'indexing_progress' => $progress,
-                'current_indexing_file' => $filename
+                'current_indexing_file' => $relativePath
             ]);
 
-            if ($this->shouldIgnore($filename)) continue;
+            if ($this->shouldIgnore($relativePath)) continue;
             
             $res = $this->indexFile($folder, $file->getRealPath(), $forceFull);
             if ($res['chunks'] > 0) {
@@ -103,39 +103,57 @@ class ArchiveService
     }
 
     /**
-     * Index a single file within a managed folder.
+     * Index a single file as a Vessel with Fragments.
      */
     public function indexFile(ManagedFolder $folder, string $filePath, bool $force = false): array
     {
         if (!File::exists($filePath)) return ['chunks' => 0];
 
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $relativePath = str_replace($folder->path . DIRECTORY_SEPARATOR, '', $filePath);
+        $lastModified = File::lastModified($filePath);
+        $checksum = md5_file($filePath);
+
+        // 1. Vessel Incremental Check
+        $vessel = Document::where('folder_id', $folder->id)
+            ->where('path', $relativePath)
+            ->first();
+
+        if (!$force && $vessel && $vessel->checksum === $checksum) {
+            return ['chunks' => 0];
+        }
+
         $extractor = $this->getExtractor($extension);
         if (!$extractor) return ['chunks' => 0];
-
-        $lastModified = File::lastModified($filePath);
-
-        // INCREMENTAL CHECK
-        if (!$force) {
-            $existing = Knowledge::on('nativephp')->where('type', 'file')
-                ->where('metadata->path', $filePath)
-                ->first();
-
-            if ($existing && ($existing->metadata['last_modified'] ?? 0) >= $lastModified) {
-                return ['chunks' => 0];
-            }
-
-            if ($existing) {
-                Knowledge::on('nativephp')->where('type', 'file')
-                    ->where('metadata->path', $filePath)
-                    ->delete();
-            }
-        }
 
         $content = $extractor->extract($filePath);
         $content = $this->sanitizeUtf8($content);
         if (empty(trim($content))) return ['chunks' => 0];
 
+        // 2. Prepare Vessel (Document)
+        if (!$vessel) {
+            $vessel = Document::create([
+                'folder_id' => $folder->id,
+                'path' => $relativePath,
+                'filename' => basename($filePath),
+                'extension' => $extension,
+                'checksum' => $checksum,
+                'metadata' => [
+                    'depth' => count(explode(DIRECTORY_SEPARATOR, $relativePath)),
+                    'subfolder' => dirname($relativePath) === '.' ? '' : dirname($relativePath)
+                ]
+            ]);
+        } else {
+            $vessel->fragments()->delete();
+            $vessel->update(['checksum' => $checksum, 'last_indexed_at' => now()]);
+        }
+
+        // 3. Optional: Generate high-level summary if the file is large
+        if (strlen($content) > 2000) {
+            $vessel->update(['summary' => $this->generateSummary($content)]);
+        }
+
+        // 4. Create Fragments (Knowledge chunks)
         $chunks = $this->splitContent($content);
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
         $chunksCreated = 0;
@@ -150,21 +168,30 @@ class ArchiveService
                     $embedding,
                     'file',
                     [
-                        'path' => $filePath,
-                        'filename' => basename($filePath),
+                        'path' => $relativePath,
+                        'filename' => $vessel->filename,
                         'chunk_index' => $index,
                         'total_chunks' => count($chunks),
                         'folder_id' => $folder->id,
                         'folder_name' => $folder->name,
                         'last_modified' => $lastModified,
                     ],
-                    true // skipIndex: bulk mode
+                    true, // skipIndex: bulk mode
+                    $vessel->id // Pass document_id as direct argument
                 );
                 $chunksCreated++;
             }
         }
 
         return ['chunks' => $chunksCreated];
+    }
+
+    protected function generateSummary(string $content): string
+    {
+        $preview = mb_substr($content, 0, 3000);
+        $prompt = "Summarize the following document content in one short, professional paragraph. Focus on the core topic and purpose.\n\nCONTENT:\n{$preview}";
+        
+        return $this->ollama->generate($prompt);
     }
 
     protected function getExtractor(string $extension): ?ExtractorInterface
@@ -177,9 +204,6 @@ class ArchiveService
         return null;
     }
 
-    /**
-     * A simple recursive-ish character splitter to avoid cutting semantic blocks.
-     */
     protected function splitContent(string $text): array
     {
         $separators = ["\n\n", "\n", ". ", " ", ""];
@@ -194,7 +218,6 @@ class ArchiveService
 
         $separator = array_shift($separators);
         if ($separator === null) {
-            // No more separators, forced split
             return str_split($text, $maxSize);
         }
 
@@ -211,7 +234,6 @@ class ArchiveService
                 }
                 
                 if (strlen($part) > $maxSize) {
-                    // Part itself is too big, recurse on it
                     $subChunks = $this->recursiveSplit($part, $separators, $maxSize);
                     foreach ($subChunks as $sc) {
                         $chunks[] = $sc;

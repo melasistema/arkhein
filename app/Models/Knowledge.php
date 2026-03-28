@@ -14,6 +14,7 @@ class Knowledge extends Model
     protected $table = 'knowledge';
 
     protected $fillable = [
+        'document_id',
         'type',
         'content',
         'embedding',
@@ -25,4 +26,9 @@ class Knowledge extends Model
         'embedding' => 'array',
         'metadata' => 'array',
     ];
+
+    public function document(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Document::class, 'document_id');
+    }
 }

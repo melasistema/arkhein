@@ -44,10 +44,11 @@ class MemoryService
 
     protected function getPartitionPath(?int $folderId, bool $shadow = false): string
     {
+        $base = storage_path('app/vektor');
         $suffix = $shadow ? '_shadow' : '';
         return $folderId 
-            ? $this->basePath . DIRECTORY_SEPARATOR . 'folder_' . $folderId . $suffix
-            : $this->basePath . DIRECTORY_SEPARATOR . 'global' . $suffix;
+            ? $base . DIRECTORY_SEPARATOR . 'folder_' . $folderId . $suffix
+            : $base . DIRECTORY_SEPARATOR . 'global' . $suffix;
     }
 
     /**
@@ -105,7 +106,10 @@ class MemoryService
     public function ensureIndex(?int $dimensions = null, ?int $folderId = null)
     {
         $folderId = $folderId ?? $this->currentFolderId;
+        
+        // CRITICAL: Synchronize state and clear OS filesystem cache
         $this->setPartition($folderId);
+        clearstatcache(true);
 
         // 1. Determine base query for this partition
         $query = Knowledge::on('nativephp');
@@ -113,8 +117,7 @@ class MemoryService
             $query->where('metadata->folder_id', $folderId);
         }
 
-        // 2. If dimensions not provided, try to detect from existing data in DB
-        // This is the CRITICAL fix for "First Prompt Re-indexing"
+        // 2. Try to detect dimensions from DB
         if ($dimensions === null) {
             $firstItem = (clone $query)->first();
             if ($firstItem && !empty($firstItem->embedding)) {
@@ -123,13 +126,14 @@ class MemoryService
             }
         }
 
-        // 3. Fallback to settings/config
+        // 3. Fallback to settings
         $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-
         Config::setDimensions($dimensions);
 
-        $path = $this->getPartitionPath($folderId);
+        $path = Config::getDataDir();
         $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
+
+        Log::info("Arkhein Vektor: Checking for index at {$vectorFile}");
 
         if (!File::exists($vectorFile) || filesize($vectorFile) === 0) {
             if ($query->count() > 0) {
@@ -187,10 +191,15 @@ class MemoryService
             // CRITICAL: Ensure directory exists and Vektor knows about it
             $this->setPartition($folderId);
 
-            $indexer = new Indexer();            $query = Knowledge::on('nativephp');
+            $indexer = new Indexer();
+            $query = Knowledge::on('nativephp');
 
             if ($folderId) {
                 $query->where('metadata->folder_id', $folderId);
+                Log::info("Arkhein Vektor: Rebuilding silo partition [{$folderId}]");
+            } else {
+                Log::info("Arkhein Vektor: Rebuilding global aggregate partition");
+                // NO WHERE CLAUSE = AGGREGATE ALL
             }
 
             $total = $query->count();
@@ -270,7 +279,7 @@ class MemoryService
     /**
      * Save any piece of knowledge into a partition.
      */
-    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false)
+    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null)
     {
         $folderId = isset($metadata['folder_id']) ? (int) $metadata['folder_id'] : null;
 
@@ -279,13 +288,13 @@ class MemoryService
             Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
+                    'document_id' => $documentId,
                     'type' => $type,
                     'content' => $content,
                     'embedding' => $embedding,
                     'metadata' => $metadata
                 ]
             );
-
             // If we are in bulk mode, we skip live binary insertion
             // and rely on the rebuildIndex() at the end.
             if ($skipIndex) {
@@ -355,8 +364,9 @@ class MemoryService
     public function reset(): bool
     {
         try {
-            File::cleanDirectory($this->basePath);
+            File::cleanDirectory(storage_path('app/vektor'));
             Knowledge::on('nativephp')->delete();
+            \App\Models\Document::on('nativephp')->delete();
             return true;
         } catch (\Throwable $e) {
             Log::error("Failed to reset knowledge base: " . $e->getMessage());
@@ -414,7 +424,7 @@ class MemoryService
 
             if ($similarity < $threshold) continue;
 
-            $item = Knowledge::on('nativephp')->find($id);
+            $item = Knowledge::on('nativephp')->with('document')->find($id);
 
             if ($item) {
                 $parsed[] = [
@@ -422,7 +432,12 @@ class MemoryService
                     'type' => $item->type,
                     'content' => $item->content,
                     'score' => $similarity,
-                    'metadata' => $item->metadata
+                    'metadata' => $item->metadata,
+                    'vessel' => $item->document ? [
+                        'summary' => $item->document->summary,
+                        'subfolder' => $item->document->metadata['subfolder'] ?? '',
+                        'depth' => $item->document->metadata['depth'] ?? 0,
+                    ] : null
                 ];
             }
         }
