@@ -6,6 +6,10 @@ Most "agents" are just thin wrappers for cloud-based surveillance. They rent you
 
 Deep complexity hidden behind a minimalist shell. Command your machine. Own your knowledge.
 
+---
+
+[![Arkhein Logo](resources/images/arkhein-image-header.png)](https://arkhein.melasistema.com/)
+
 **Note:** This repository is for development and architectural audit. Operators looking for the production build can download the macOS `.dmg` from the official channels.
 
 - **Website:** [arkhein.melasistema.com](https://arkhein.melasistema.com/)
