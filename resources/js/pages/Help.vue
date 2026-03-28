@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
 import { Head } from '@inertiajs/vue3';
-import { ref, nextTick, onMounted } from 'vue';
+import { ref, reactive, nextTick, onMounted } from 'vue';
 import axios from 'axios';
 import Button from '@/components/ui/button/Button.vue';
 import Markdown from '@/components/Markdown.vue';
@@ -16,8 +16,10 @@ const props = defineProps<{
 }>();
 
 interface Interaction {
+    id?: number;
     role: 'user' | 'assistant' | 'system';
     content: string;
+    thought?: string;
 }
 
 const breadcrumbs = [
@@ -27,7 +29,7 @@ const breadcrumbs = [
 /**
  * State
  */
-const localInteractions = ref<Interaction[]>(props.interactions || []);
+const localInteractions = reactive<Interaction[]>([...props.interactions]);
 const newMessage = ref('');
 const isLoading = ref(false);
 const isClearing = ref(false);
@@ -55,15 +57,15 @@ const sendMessage = async () => {
     if (!newMessage.value.trim() || isLoading.value) return;
 
     const userContent = newMessage.value;
-    localInteractions.value.push({ role: 'user', content: userContent });
+    localInteractions.push({ role: 'user', content: userContent });
     
     // Add an empty assistant message to populate as chunks arrive
-    const assistantIndex = localInteractions.value.length;
-    localInteractions.value.push({ role: 'assistant', content: '' });
+    const assistantIndex = localInteractions.length;
+    localInteractions.push({ role: 'assistant', content: '', thought: '' });
 
     newMessage.value = '';
     isLoading.value = true;
-    statusMessage.value = 'Searching Authorized Silos...';
+    statusMessage.value = 'Initializing...';
     
     await scrollToBottom();
 
@@ -99,10 +101,15 @@ const sendMessage = async () => {
                 if (dataStr === '[DONE]') break;
 
                 try {
-                    const data = JSON.parse(dataStr);
-                    if (data.chunk) {
-                        localInteractions.value[assistantIndex].content += data.chunk;
-                        statusMessage.value = 'Synthesizing...';
+                    const parsed = JSON.parse(dataStr);
+                    const { event, data } = parsed;
+                    
+                    if (event === 'status') {
+                        statusMessage.value = data;
+                    } else if (event === 'thought') {
+                        localInteractions[assistantIndex].thought = data;
+                    } else if (event === 'chunk') {
+                        localInteractions[assistantIndex].content += data;
                         scrollToBottom();
                     }
                 } catch (e) {
@@ -112,7 +119,7 @@ const sendMessage = async () => {
         }
     } catch (error) {
         console.error("Stream error:", error);
-        localInteractions.value[assistantIndex].content = 'Sorry, I encountered an error while processing your request.';
+        localInteractions[assistantIndex].content = 'Sorry, I encountered an error while processing your request.';
     } finally {
         isLoading.value = false;
         statusMessage.value = 'Ready';
@@ -127,7 +134,7 @@ const clearHistory = async () => {
     isClearing.value = true;
     try {
         await axios.post('/help/clear');
-        localInteractions.value = [];
+        localInteractions.length = 0;
     } catch (e) {
         console.error("Failed to clear help history");
     } finally {
@@ -202,6 +209,12 @@ onMounted(() => {
                             : 'bg-muted/40 border border-border/50 rounded-tl-none'"
                     >
                         <div class="flex flex-col gap-3 flex-1 overflow-hidden leading-relaxed">
+                            <!-- Thought Block -->
+                            <div v-if="interaction.thought" class="mb-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/10 text-[10px] italic opacity-80 leading-relaxed animate-in fade-in slide-in-from-top-1">
+                                <span class="font-bold uppercase not-italic text-[8px] opacity-50 block mb-1">Archivist Thought</span>
+                                {{ interaction.thought }}
+                            </div>
+
                             <Markdown v-if="interaction.role === 'assistant'" :content="interaction.content" />
                             <template v-else>{{ interaction.content }}</template>
                         </div>

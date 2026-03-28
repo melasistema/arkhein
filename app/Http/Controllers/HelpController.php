@@ -3,11 +3,12 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use App\Services\OllamaService;
 use App\Services\PromptService;
 use App\Models\HelpInteraction;
+use App\Services\GlobalRagService;
+use Illuminate\Support\Facades\Log;
 
 class HelpController extends Controller
 {
@@ -19,58 +20,75 @@ class HelpController extends Controller
     }
 
     public function send(
-        Request $request,
-        OllamaService $ollama,
+        Request $request, 
+        OllamaService $ollama, 
         PromptService $prompts,
-        \App\Services\GlobalRagService $rag
+        GlobalRagService $rag
     ) {
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
 
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
-        // 1. Analyze Intent: SYSTEM, DATA, or BOTH
-        $intent = $this->analyzeHelpIntent($input, $ollama);
-        Log::info("Arkhein Archivist: Help Intent -> {$intent}");
+        // 1. DISPATCHER: Analyze Strategy
+        $strategy = $this->analyzeHelpIntent($input, $ollama);
+        
+        // 2. RESEARCHER: Surgical Retrieval
+        $knowledge = [];
+        if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
+            $limit = $strategy['rag_limit'] ?? 10;
+            $knowledge = $rag->recall($input, $limit);
+        }
 
-        // 2. Conditional RAG
-        $knowledge = ($intent === 'DATA' || $intent === 'BOTH') ? $rag->recall($input, 10) : [];
-
-        $messages = $this->buildChatPayload($prompts, $knowledge, $input);
+        // 3. SYNTHESIZER
+        $messages = $this->buildChatPayload($prompts, $knowledge, $strategy);
         $assistantMessage = $ollama->chat($messages);
 
         $this->saveAssistantMessage($assistantMessage);
 
         return response()->json([
-            'message' => $assistantMessage
+            'message' => $assistantMessage,
+            'thought' => $strategy['thought'] ?? null
         ]);
     }
 
     public function stream(
-        Request $request,
-        OllamaService $ollama,
+        Request $request, 
+        OllamaService $ollama, 
         PromptService $prompts,
-        \App\Services\GlobalRagService $rag
+        GlobalRagService $rag
     ) {
         set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
-
+        
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
-        // 1. Analyze Intent
-        $intent = $this->analyzeHelpIntent($input, $ollama);
-        Log::info("Arkhein Archivist: Help Intent (Stream) -> {$intent}");
+        return response()->stream(function () use ($ollama, $prompts, $rag, $input) {
+            // 1. DISPATCHER
+            echo "data: " . json_encode(['event' => 'status', 'data' => 'Analyzing intent...']) . "\n\n";
+            $strategy = $this->analyzeHelpIntent($input, $ollama);
+            echo "data: " . json_encode(['event' => 'thought', 'data' => $strategy['thought']]) . "\n\n";
+            if (ob_get_level() > 0) ob_flush();
+            flush();
 
-        // 2. Conditional RAG
-        $knowledge = ($intent === 'DATA' || $intent === 'BOTH') ? $rag->recall($input, 10) : [];
+            // 2. RESEARCHER
+            $knowledge = [];
+            if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
+                echo "data: " . json_encode(['event' => 'status', 'data' => 'Searching authorized silos...']) . "\n\n";
+                $limit = $strategy['rag_limit'] ?? 10;
+                $knowledge = $rag->recall($input, $limit);
+                if (ob_get_level() > 0) ob_flush();
+                flush();
+            }
 
-        $messages = $this->buildChatPayload($prompts, $knowledge, $input);
+            // 3. SYNTHESIZER
+            echo "data: " . json_encode(['event' => 'status', 'data' => 'Synthesizing response...']) . "\n\n";
+            $messages = $this->buildChatPayload($prompts, $knowledge, $strategy);
 
-        return response()->stream(function () use ($ollama, $messages) {
             $fullResponse = "";
             $ollama->streamChat($messages, function ($chunk) use (&$fullResponse) {
                 $fullResponse .= $chunk;
-                echo "data: " . json_encode(['chunk' => $chunk]) . "\n\n";
+                echo "data: " . json_encode(['event' => 'chunk', 'data' => $chunk]) . "\n\n";
                 if (ob_get_level() > 0) ob_flush();
                 flush();
             });
@@ -86,88 +104,73 @@ class HelpController extends Controller
         ]);
     }
 
-    protected function analyzeHelpIntent(string $input, OllamaService $ollama): string
+    protected function analyzeHelpIntent(string $input, OllamaService $ollama): array
     {
-        // Simple heuristics first
-        $inputLower = strtolower($input);
+        $prompt = "You are the Arkhein Dispatcher. Analyze the user query and decide if it needs software documentation (SYSTEM) or user data/files (DATA).
+        
+        RULES:
+        - If query is about Arkhein features, settings, or 'how to use' -> SYSTEM.
+        - If query mentions a specific topic, book, person, or project -> DATA.
+        - If mixed -> BOTH.
 
-        // If they ask about "Arkhein", "Software", "Commands", "How to", "Help", "System"
-        $systemKeywords = ['arkhein', 'software', 'command', 'how to', 'settings', 'config', 'vantage hub', 'archivist', 'memory', 'ollama'];
-        $mentionsSystem = false;
-        foreach ($systemKeywords as $kw) { if (str_contains($inputLower, $kw)) { $mentionsSystem = true; break; } }
-
-        // If they ask about "My files", "Document", "Project", or specific topics found via a quick heuristic
-        // We will default to BOTH if it's ambiguous, but if it's clearly about software help, we stay SYSTEM.
-
-        $prompt = "Classify the following query into one of three categories:
-        - 'SYSTEM': User is asking for help with Arkhein software, features, commands, or settings.
-        - 'DATA': User is asking about their own files, documents, or content indexed in their folders.
-        - 'BOTH': Query involves both system features and user data.
-
-        QUERY: \"{$input}\"
-
-        Respond with ONLY the category name (SYSTEM, DATA, or BOTH).";
-
-        $response = trim($ollama->generate($prompt));
-
-        // Fallback to heuristic if LLM fails or gives weird output
-        if (!in_array($response, ['SYSTEM', 'DATA', 'BOTH'])) {
-            return $mentionsSystem ? 'SYSTEM' : 'BOTH';
+        Respond with ONLY a JSON object:
+        {
+          \"intent\": \"SYSTEM\"|\"DATA\"|\"BOTH\",
+          \"thought\": \"A 1-sentence professional reasoning\",
+          \"rag_limit\": 5
         }
 
-        return $response;
+        QUERY: \"{$input}\"";
+
+        try {
+            $response = $ollama->generate($prompt, null, ['format' => 'json']);
+            
+            // Regex fallback to extract JSON if LLM added filler
+            if (preg_match('/\{.*\}/s', $response, $matches)) {
+                $data = json_decode($matches[0], true);
+                if (isset($data['intent'])) return $data;
+            }
+        } catch (\Exception $e) {
+            Log::error("Help Dispatcher Failed: " . $e->getMessage());
+        }
+
+        // Safe Fallback
+        return [
+            'intent' => 'BOTH',
+            'thought' => 'Analyzing both system architecture and local documentation for maximum coverage.',
+            'rag_limit' => 5
+        ];
     }
 
     protected function saveUserMessage(string $content)
     {
-        HelpInteraction::create([
-            'role' => 'user',
-            'content' => $content
-        ]);
+        HelpInteraction::create(['role' => 'user', 'content' => $content]);
     }
 
     protected function saveAssistantMessage(string $content)
     {
-        HelpInteraction::create([
-            'role' => 'assistant',
-            'content' => $content
-        ]);
+        HelpInteraction::create(['role' => 'assistant', 'content' => $content]);
     }
 
-    protected function buildChatPayload(PromptService $prompts, array $knowledge = [], ?string $currentQuery = null): array
+    protected function buildChatPayload(PromptService $prompts, array $knowledge, array $strategy): array
     {
-        $history = HelpInteraction::latest()->limit(10)->get()->reverse();
-
-        // Gather Workspace Metadata
-        $folders = \App\Models\ManagedFolder::all()->map(fn($f) => "- {$f->name} (Path: {$f->path})")->implode("\n");
-        $verticals = \App\Models\Vertical::all()->map(fn($v) => "- {$v->name} (Connected to: {$v->folder?->name})")->implode("\n");
-
-        $metadata = "### CURRENT WORKSPACE MAP:\n";
-        $metadata .= "Authorized Folders:\n" . ($folders ?: "None") . "\n\n";
-        $metadata .= "Active Vantage Cards:\n" . ($verticals ?: "None") . "\n";
-
-        $systemPrompt = $prompts->buildHelpPrompt() . "\n\n" . $metadata;
-
-        $messages = [['role' => 'system', 'content' => $systemPrompt]];
-
-        // Add history (except the last message if we are going to append knowledge to it)
-        $historyItems = $history->values();
-        for ($i = 0; $i < count($historyItems) - ($currentQuery ? 1 : 0); $i++) {
-            $item = $historyItems[$i];
-            $messages[] = ['role' => $item->role, 'content' => $item->content];
+        $history = HelpInteraction::latest()->limit(8)->get()->reverse();
+        
+        $systemDocs = ($strategy['intent'] !== 'DATA') ? $prompts->buildHelpPrompt() : "You are the Sovereign Archivist. Answer questions based on provided user data.";
+        
+        $prompt = "{$systemDocs}\n\n";
+        
+        if (!empty($knowledge)) {
+            $prompt .= "### AUTHORIZED USER DATA:\n";
+            foreach ($knowledge as $k) {
+                $source = $k['metadata']['filename'] ?? 'unknown';
+                $prompt .= "[Source: {$source}]\nContent: " . $k['content'] . "\n\n";
+            }
         }
 
-        // Append RAG knowledge to the current query
-        if ($currentQuery) {
-            $ctx = "";
-            if (!empty($knowledge)) {
-                $ctx = "### RELEVANT DOCUMENTATION & SYSTEM CONTEXT:\n";
-                foreach ($knowledge as $k) {
-                    $ctx .= "- " . $k['content'] . "\n";
-                }
-                $ctx .= "\n\nUser Query: ";
-            }
-            $messages[] = ['role' => 'user', 'content' => $ctx . $currentQuery];
+        $messages = [['role' => 'system', 'content' => $prompt]];
+        foreach ($history as $h) {
+            $messages[] = ['role' => $h->role, 'content' => $h->content];
         }
 
         return $messages;

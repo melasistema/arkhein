@@ -40,7 +40,7 @@ class MemoryService
 
     protected function getPartitionPath(?int $folderId): string
     {
-        return $folderId 
+        return $folderId
             ? $this->basePath . DIRECTORY_SEPARATOR . 'folder_' . $folderId
             : $this->basePath . DIRECTORY_SEPARATOR . 'global';
     }
@@ -71,12 +71,12 @@ class MemoryService
 
         // 3. Fallback to settings/config
         $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-        
+
         Config::setDimensions($dimensions);
 
         $path = $this->getPartitionPath($folderId);
         $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
-        
+
         if (!File::exists($vectorFile) || filesize($vectorFile) === 0) {
             if ($query->count() > 0) {
                 Log::info("Arkhein: Binary index missing for partition [{$folderId}]. Rebuilding with detected {$dimensions} dimensions...");
@@ -95,10 +95,10 @@ class MemoryService
     protected function isMismatched(string $path, int $dimensions): bool
     {
         if (!File::exists($path)) return false;
-        
+
         clearstatcache(true, $path);
         $size = filesize($path);
-        
+
         if ($size === 0) return false;
 
         $expectedRowSize = Config::getVectorRowSize();
@@ -129,7 +129,7 @@ class MemoryService
 
             $this->clearBinaryFiles($folderId);
             Config::setDimensions($dimensions);
-            
+
             $indexer = new Indexer();
             $query = Knowledge::on('nativephp');
 
@@ -208,7 +208,7 @@ class MemoryService
     public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false)
     {
         $folderId = isset($metadata['folder_id']) ? (int) $metadata['folder_id'] : null;
-        
+
         try {
             // 1. Persistence in SSOT (SQLite) - ALWAYS DO THIS
             Knowledge::on('nativephp')->updateOrCreate(
@@ -221,7 +221,7 @@ class MemoryService
                 ]
             );
 
-            // If we are in bulk mode, we skip live binary insertion 
+            // If we are in bulk mode, we skip live binary insertion
             // and rely on the rebuildIndex() at the end.
             if ($skipIndex) {
                 return true;
@@ -238,7 +238,7 @@ class MemoryService
             $this->ensureIndex(count($embedding), null);
             $indexer = new Indexer();
             $indexer->insert($id, $embedding);
-            
+
             return true;
         } catch (\Exception $e) {
             Log::error("Failed to save to Knowledge Index [{$folderId}]: " . $e->getMessage());
@@ -252,12 +252,14 @@ class MemoryService
     public function search(array $vector, int $limit = 5, ?float $threshold = null, ?int $folderId = null)
     {
         $threshold = $threshold ?? config('knowledge.recall_threshold', 0.65);
-        $folderId = $folderId ?? $this->currentFolderId;
+
+        // CRITICAL: Explicitly set partition to null if null provided,
+        // don't rely on currentFolderId which might be a Vantage Card.
+        $this->setPartition($folderId);
 
         try {
             $this->ensureIndex(count($vector), $folderId);
             $searcher = new Searcher();
-            
             $results = $searcher->search($vector, $limit);
 
             // Self-healing: if DB has data for this partition but Vektor returns 0

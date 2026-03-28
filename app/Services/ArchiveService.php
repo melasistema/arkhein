@@ -155,6 +155,7 @@ class ArchiveService
                         'chunk_index' => $index,
                         'total_chunks' => count($chunks),
                         'folder_id' => $folder->id,
+                        'folder_name' => $folder->name,
                         'last_modified' => $lastModified,
                     ],
                     true // skipIndex: bulk mode

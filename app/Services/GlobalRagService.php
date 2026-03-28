@@ -15,7 +15,7 @@ class GlobalRagService
     /**
      * Search across all authorized partitions.
      */
-    public function recall(string $query, int $limit = 10): array
+    public function recall(string $query, int $limit = 20): array
     {
         $embedding = $this->ollama->embeddings($query);
 
