@@ -25,6 +25,11 @@ const props = defineProps<{
     is_ollama_online: boolean;
     folders: any[];
     is_optimized: boolean;
+    reconcile: {
+        status: string;
+        progress: number;
+        last_at: string;
+    };
     recommended: {
         llm: string;
         embedding: string;
@@ -46,7 +51,8 @@ const breadcrumbs = [
 
 const syncing = ref(false);
 const recentlySynced = ref(false);
-const isRebuilding = ref(false);
+const isRebuilding = ref(props.reconcile.status === 'running');
+const reconcileProgress = ref(props.reconcile.progress);
 const isSettingsLocked = ref(true); // Locked by default for safety
 const foldersList = ref([...props.folders]);
 const pollInterval = ref<any>(null);
@@ -80,13 +86,6 @@ const toggleLock = () => {
     }
 };
 
-const optimizeConfiguration = () => {
-    form.llm_model = props.recommended.llm;
-    form.embedding_model = props.recommended.embedding;
-    form.embedding_dimensions = props.recommended.dimensions;
-    isSettingsLocked.value = false;
-};
-
 const findBestMatch = (baseName: string) => {
     const installed = props.models.map(m => m.name);
     if (installed.includes(baseName)) return baseName;
@@ -109,18 +108,14 @@ const setComputeProfile = (profile: 'efficient' | 'elite') => {
 };
 
 const rebuildIndex = async () => {
-    if (isBusy.value) {
-return;
-}
+    if (isBusy.value) return;
     
     isRebuilding.value = true;
+    reconcileProgress.value = 0;
 
     try {
         await axios.post('/settings/rebuild');
-        // We show it's done after a short delay since it's background or fast
-        setTimeout(() => {
-            isRebuilding.value = false;
-        }, 2000);
+        startPolling();
     } catch (e) {
         console.error("Rebuild failed", e);
         isRebuilding.value = false;
@@ -132,8 +127,12 @@ const pollStatus = async () => {
         const res = await axios.get('/settings');
         foldersList.value = res.data.folders;
         
+        // Update Reconciliation State
+        isRebuilding.value = res.data.reconcile.status === 'running';
+        reconcileProgress.value = res.data.reconcile.progress;
+
         // If nothing is indexing anymore, clear the interval
-        if (!isAnyFolderIndexing.value) {
+        if (!isAnyFolderIndexing.value && !isRebuilding.value) {
             stopPolling();
         }
     } catch (e) {
@@ -143,10 +142,7 @@ const pollStatus = async () => {
 };
 
 const startPolling = () => {
-    if (pollInterval.value) {
-return;
-}
-
+    if (pollInterval.value) return;
     pollInterval.value = setInterval(pollStatus, 3000);
 };
 
@@ -158,7 +154,7 @@ const stopPolling = () => {
 };
 
 onMounted(() => {
-    if (isAnyFolderIndexing.value) {
+    if (isAnyFolderIndexing.value || isRebuilding.value) {
         startPolling();
     }
 });
@@ -185,9 +181,7 @@ const submit = () => {
 };
 
 const syncFolders = () => {
-    if (isBusy.value) {
-return;
-}
+    if (isBusy.value) return;
 
     syncing.value = true;
     useForm({}).post('/settings/sync', {
@@ -215,9 +209,7 @@ const addFolder = () => {
 };
 
 const removeFolder = (id: number) => {
-    if (isBusy.value) {
-return;
-}
+    if (isBusy.value) return;
 
     useForm({}).delete(`/settings/folders/${id}`, {
         preserveScroll: true,
@@ -259,7 +251,7 @@ return;
                                     <Zap class="h-2.5 w-2.5 fill-current" />
                                     Optimized for Arkhein
                                 </div>
-                                <div v-else @click="optimizeConfiguration" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-[10px] text-muted-foreground font-black uppercase tracking-tighter border border-border cursor-pointer hover:bg-primary/5 hover:text-primary transition-colors">
+                                <div v-else class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-[10px] text-muted-foreground font-black uppercase tracking-tighter border border-border">
                                     Custom Config
                                 </div>
                             </div>
@@ -274,11 +266,11 @@ return;
                                     type="button"
                                     @click="setComputeProfile('efficient')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="form.llm_model === 'mistral' ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    :class="form.llm_model.includes('mistral') ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
                                 >
                                     <div class="flex items-center justify-between">
                                         <span class="text-[10px] font-black uppercase tracking-widest text-primary">Efficient</span>
-                                        <Zap v-if="form.llm_model === 'mistral'" class="h-3 w-3 text-primary fill-current" />
+                                        <Zap v-if="form.llm_model.includes('mistral')" class="h-3 w-3 text-primary fill-current" />
                                     </div>
                                     <span class="text-xs font-bold">Mistral + Nomic</span>
                                     <span class="text-[9px] leading-tight text-muted-foreground">Standard Mac (8GB-16GB RAM). Balanced speed and accuracy.</span>
@@ -288,11 +280,11 @@ return;
                                     type="button"
                                     @click="setComputeProfile('elite')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="form.llm_model === 'qwen3:8b' ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    :class="form.llm_model.includes('qwen3:8b') ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
                                 >
                                     <div class="flex items-center justify-between">
                                         <span class="text-[10px] font-black uppercase tracking-widest text-indigo-500">Elite</span>
-                                        <Sparkles v-if="form.llm_model === 'qwen3:8b'" class="h-3 w-3 text-indigo-500 fill-current" />
+                                        <Sparkles v-if="form.llm_model.includes('qwen3:8b')" class="h-3 w-3 text-indigo-500 fill-current" />
                                     </div>
                                     <span class="text-xs font-bold">Qwen3 Suite</span>
                                     <span class="text-[9px] leading-tight text-muted-foreground">Pro/Max Specs (32GB+ RAM). Superior analytical reasoning.</span>
@@ -392,7 +384,6 @@ return;
                                                 </SelectItem>
                                             </SelectContent>
                                         </Select>
-                                        <p class="text-[10px] text-muted-foreground">Recommended: {{ recommended.llm }}</p>
                                     </div>
 
                                     <div class="space-y-2">
@@ -407,7 +398,6 @@ return;
                                                 </SelectItem>
                                             </SelectContent>
                                         </Select>
-                                        <p class="text-[10px] text-muted-foreground">Recommended: {{ recommended.embedding }}</p>
                                     </div>
 
                                     <div class="space-y-2">
@@ -421,9 +411,6 @@ return;
                                             v-model="form.embedding_dimensions"
                                             class="rounded-xl"
                                         />
-                                        <p class="text-[10px] text-muted-foreground">
-                                            Default for {{ recommended.embedding }} is {{ recommended.dimensions }}.
-                                        </p>
                                     </div>
                                 </div>
 
@@ -432,10 +419,6 @@ return;
                                         <Button type="button" variant="outline" size="sm" class="rounded-xl px-4 h-9" @click="toggleLock">
                                             <component :is="isSettingsLocked ? Lock : Unlock" class="mr-2 h-3.5 w-3.5" />
                                             {{ isSettingsLocked ? 'Unlock Settings' : 'Lock for Safety' }}
-                                        </Button>
-                                        
-                                        <Button v-if="!isSettingsLocked && !is_optimized" type="button" variant="ghost" size="sm" class="rounded-xl px-4 h-9 text-[10px] font-bold uppercase opacity-70 hover:opacity-100" @click="optimizeConfiguration">
-                                            Restore Defaults
                                         </Button>
                                     </div>
 
@@ -466,6 +449,21 @@ return;
                         </CardHeader>
                         <CardContent>
                             <div class="space-y-6">
+                                <!-- Progress Bar for Reconciliation -->
+                                <div v-if="isRebuilding" class="space-y-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20">
+                                    <div class="flex items-center justify-between text-[10px] uppercase tracking-widest font-black text-blue-600">
+                                        <span>System Reconciliation in Progress</span>
+                                        <span>{{ reconcileProgress }}%</span>
+                                    </div>
+                                    <div class="h-2 w-full bg-blue-500/10 rounded-full overflow-hidden">
+                                        <div 
+                                            class="h-full bg-blue-500 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
+                                            :style="{ width: reconcileProgress + '%' }"
+                                        ></div>
+                                    </div>
+                                    <p class="text-[9px] text-muted-foreground italic">Batched shadow rebuild: Preparing fresh high-speed binary indices without downtime.</p>
+                                </div>
+
                                 <!-- SQLite Layer (SSOT) -->
                                 <div class="p-4 rounded-2xl bg-muted/40 border border-border/50 flex flex-col gap-3">
                                     <div class="flex items-center justify-between">
@@ -513,7 +511,7 @@ return;
                                         :disabled="isBusy"
                                     >
                                         <RefreshCw class="mr-2 h-3 w-3" :class="{ 'animate-spin': isRebuilding }" />
-                                        {{ isRebuilding ? 'Rebuilding Index...' : 'Force Index Reconciliation' }}
+                                        {{ isRebuilding ? 'Reconciling...' : 'Force Index Reconciliation' }}
                                     </Button>
                                     <p class="text-[9px] text-muted-foreground text-center mt-3 px-4 italic">
                                         Reconciles the binary accelerator with the SQLite Source of Truth.
@@ -543,8 +541,8 @@ return;
 
                     <Card>
                         <CardHeader>
-                            <CardTitle class="flex items-center gap-2">
-                                <ShieldCheck class="h-5 w-5 text-green-600" />
+                            <CardTitle class="flex items-center gap-2 text-green-600">
+                                <ShieldCheck class="h-5 w-5" />
                                 Permissions & Managed Folders
                             </CardTitle>
                             <CardDescription>
@@ -558,63 +556,28 @@ return;
                             <div v-else class="space-y-3">
                                 <div v-for="folder in foldersList" :key="folder.id" class="flex flex-col gap-3 p-4 rounded-2xl bg-muted/30 border border-border/50">
                                     <div class="flex items-center justify-between">
-                                        <div class="flex flex-col gap-0.5 overflow-hidden">
+                                        <div class="flex flex-col gap-0.5 overflow-hidden text-left">
                                             <div class="flex items-center gap-2">
                                                 <span class="text-sm font-semibold truncate">{{ folder.name }}</span>
                                                 <span v-if="folder.is_indexing" class="flex items-center gap-1 text-[9px] text-primary font-black uppercase">
                                                     <RefreshCw class="h-2 w-2 animate-spin" />
-                                                    Indexing {{ folder.indexing_progress }}%
+                                                    Indexing...
                                                 </span>
                                             </div>
                                             <span class="text-[10px] text-muted-foreground truncate">{{ folder.path }}</span>
                                         </div>
-                                        <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)" :disabled="isBusy">
+                                        <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)">
                                             <Trash2 class="h-4 w-4" />
                                         </Button>
-                                    </div>
-
-                                    <!-- Progress Bar -->
-                                    <div v-if="folder.is_indexing" class="space-y-1.5">
-                                        <div class="flex items-center justify-between text-[9px] uppercase tracking-widest font-bold opacity-50">
-                                            <span class="truncate max-w-[200px] italic">Processing: {{ folder.current_indexing_file || 'Starting...' }}</span>
-                                            <span>{{ folder.indexing_progress }}%</span>
-                                        </div>
-                                        <div class="h-1.5 w-full bg-primary/10 rounded-full overflow-hidden">
-                                            <div 
-                                                class="h-full bg-primary transition-all duration-500 ease-out"
-                                                :style="{ width: folder.indexing_progress + '%' }"
-                                            ></div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="pt-4 flex flex-col gap-3">
-                                <div class="flex gap-3">
-                                    <Button variant="outline" class="flex-1 rounded-xl" @click="addFolder" :disabled="isBusy">
-                                        <FolderPlus class="mr-2 h-4 w-4" />
-                                        Authorize Folder
-                                    </Button>
-                                    <Button 
-                                        variant="secondary" 
-                                        class="flex-1 rounded-xl"
-                                        :disabled="isBusy || foldersList.length === 0" 
-                                        @click="syncFolders"
-                                    >
-                                        <RefreshCw 
-                                            v-if="isBusy" 
-                                            class="mr-2 h-4 w-4 animate-spin" 
-                                        />
-                                        <RefreshCw 
-                                            v-else
-                                            class="mr-2 h-4 w-4" 
-                                        />
-                                        {{ isBusy ? 'Syncing...' : 'Sync All' }}
-                                    </Button>
-                                </div>
-                                <p v-if="recentlySynced" class="text-[10px] text-green-600 font-bold text-center animate-in fade-in slide-in-from-top-1">
-                                    Background indexing dispatched.
-                                </p>
+                                <Button variant="outline" class="w-full rounded-xl" @click="addFolder">
+                                    <FolderPlus class="mr-2 h-4 w-4" />
+                                    Authorize New Folder
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>

@@ -75,6 +75,11 @@ class SettingsController extends Controller
             'is_ollama_online' => $isOllamaOnline,
             'folders' => $folders,
             'is_optimized' => $isOptimized,
+            'reconcile' => [
+                'status' => Setting::get('system_reconcile_status', 'idle'),
+                'progress' => (int) Setting::get('system_reconcile_progress', 0),
+                'last_at' => Setting::get('system_reconcile_last_at'),
+            ],
             'recommended' => [
                 'llm' => $recommendedLLM,
                 'embedding' => $recommendedEmbedding,
@@ -118,10 +123,13 @@ class SettingsController extends Controller
             ->open();
 
         if ($path) {
-            ManagedFolder::updateOrCreate(
+            $folder = ManagedFolder::updateOrCreate(
                 ['path' => $path],
                 ['name' => basename($path)]
             );
+
+            // AUTO-INDEX after authorization
+            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
         }
 
         return back();
@@ -143,11 +151,10 @@ class SettingsController extends Controller
         return back();
     }
 
-    public function rebuild(MemoryService $memory)
+    public function rebuild()
     {
-        $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-        $memory->rebuildIndex($dimensions); // Partitioned (current)
-        $memory->rebuildGlobalIndex($dimensions); // Aggregate
+        // Dispatch the unbreakable batched job for Global partition
+        \App\Jobs\ReconcileMemoryJob::dispatch(null)->onConnection('background');
 
         return response()->json(['success' => true]);
     }

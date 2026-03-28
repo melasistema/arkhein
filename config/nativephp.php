@@ -148,6 +148,12 @@ return [
             'timeout' => 300,
             'sleep' => 3,
         ],
+        'background' => [
+            'queues' => ['background'],
+            'memory_limit' => 256, // Indexing can be memory intensive
+            'timeout' => 1200,     // Allow long-running indexing/rebuilds
+            'sleep' => 3,
+        ],
     ],
 
     /**

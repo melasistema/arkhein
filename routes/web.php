@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Http\Request;
 use App\Http\Controllers\HelpController;
 use App\Http\Controllers\OllamaStatusController;
 use App\Http\Controllers\SettingsController;
@@ -12,8 +13,13 @@ Route::get('/', function() {
 });
 
 Route::middleware([])->group(function () {
-    Route::get('/dashboard', function () {
-        return Inertia::render('Dashboard', [
+    Route::get('/dashboard', function (Request $request) {
+        $data = [
+            'status' => [
+                'is_reconciling' => \App\Models\Setting::get('system_reconcile_status') === 'running',
+                'reconcile_progress' => (int) \App\Models\Setting::get('system_reconcile_progress', 0),
+                'is_indexing_any' => \App\Models\ManagedFolder::where('is_indexing', true)->exists(),
+            ],
             'stats' => [
                 'verticals_count' => \App\Models\Vertical::count(),
                 'folders_count' => \App\Models\ManagedFolder::count(),
@@ -23,8 +29,17 @@ Route::middleware([])->group(function () {
                     ->limit(5)
                     ->get(['content', 'type', 'metadata'])
             ]
-        ]);
+        ];
+
+        if ($request->wantsJson()) {
+            return response()->json($data);
+        }
+
+        return Inertia::render('Dashboard', $data);
     })->name('dashboard');
+
+    // System Monitor
+    Route::get('/system/heartbeat', [\App\Http\Controllers\SystemStatusController::class, 'heartbeat'])->name('system.heartbeat');
 
     // Help Module
     Route::get('/help', [HelpController::class, 'index'])->name('help');

@@ -25,10 +25,10 @@ class MemoryService
      * Switch the active Vektor partition.
      * Vektor uses static Config, so we must set the directory before any Vektor operation.
      */
-    public function setPartition(?int $folderId): self
+    public function setPartition(?int $folderId, bool $shadow = false): self
     {
         $this->currentFolderId = $folderId;
-        $path = $this->getPartitionPath($folderId);
+        $path = $this->getPartitionPath($folderId, $shadow);
 
         if (!File::isDirectory($path)) {
             File::makeDirectory($path, 0755, true);
@@ -38,13 +38,53 @@ class MemoryService
         return $this;
     }
 
-    protected function getPartitionPath(?int $folderId): string
+    protected function getPartitionPath(?int $folderId, bool $shadow = false): string
     {
-        return $folderId
-            ? $this->basePath . DIRECTORY_SEPARATOR . 'folder_' . $folderId
-            : $this->basePath . DIRECTORY_SEPARATOR . 'global';
+        $suffix = $shadow ? '_shadow' : '';
+        return $folderId 
+            ? $this->basePath . DIRECTORY_SEPARATOR . 'folder_' . $folderId . $suffix
+            : $this->basePath . DIRECTORY_SEPARATOR . 'global' . $suffix;
     }
 
+    /**
+     * Prepare a shadow directory for a fresh rebuild.
+     */
+    public function prepareShadow(?int $folderId): string
+    {
+        $path = $this->getPartitionPath($folderId, true);
+        if (File::isDirectory($path)) {
+            File::deleteDirectory($path);
+        }
+        File::makeDirectory($path, 0755, true);
+        return $path;
+    }
+
+    /**
+     * Atomically swap the shadow index with the live one.
+     */
+    public function swapShadow(?int $folderId): bool
+    {
+        $livePath = $this->getPartitionPath($folderId, false);
+        $shadowPath = $this->getPartitionPath($folderId, true);
+
+        if (!File::isDirectory($shadowPath)) return false;
+
+        try {
+            // Move live to backup, shadow to live, then delete backup
+            $backupPath = $livePath . '_backup';
+            if (File::isDirectory($livePath)) {
+                File::moveDirectory($livePath, $backupPath);
+            }
+            File::moveDirectory($shadowPath, $livePath);
+            if (File::isDirectory($backupPath)) {
+                File::deleteDirectory($backupPath);
+            }
+            return true;
+        } catch (\Throwable $e) {
+            Log::error("Arkhein Vektor: Swap failed: " . $e->getMessage());
+            return false;
+        }
+    }
     /**
      * Ensure the index is ready and matched to dimensions.
      */

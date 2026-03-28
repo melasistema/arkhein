@@ -74,8 +74,8 @@ const truncate = (text: string, length: number) => {
 
             <!-- Quick Navigation -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <Link href="/vantage" class="group p-8 rounded-[2rem] bg-muted/40 border border-border/40 hover:bg-muted/60 transition-all flex items-center justify-between">
-                    <div class="flex items-center gap-4">
+                <Link href="/vantage" class="group p-8 rounded-[2rem] bg-muted/40 border border-border/40 hover:bg-muted/60 transition-all flex items-center justify-between relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
                         <div class="p-4 rounded-2xl bg-background border border-border shadow-sm group-hover:scale-110 transition-transform">
                             <LayoutGrid class="h-6 w-6" />
                         </div>
@@ -87,8 +87,8 @@ const truncate = (text: string, length: number) => {
                     <ChevronRight class="h-5 w-5 text-muted-foreground opacity-0 group-hover:opacity-100 -translate-x-2 group-hover:translate-x-0 transition-all" />
                 </Link>
 
-                <Link href="/settings" class="group p-8 rounded-[2rem] bg-muted/40 border border-border/40 hover:bg-muted/60 transition-all flex items-center justify-between">
-                    <div class="flex items-center gap-4">
+                <Link href="/settings" class="group p-8 rounded-[2rem] bg-muted/40 border border-border/40 hover:bg-muted/60 transition-all flex items-center justify-between relative overflow-hidden">
+                    <div class="flex items-center gap-4 relative z-10">
                         <div class="p-4 rounded-2xl bg-background border border-border shadow-sm group-hover:scale-110 transition-transform">
                             <FolderSearch class="h-6 w-6" />
                         </div>
@@ -117,7 +117,7 @@ const truncate = (text: string, length: number) => {
                         <div class="flex-1 overflow-hidden">
                             <div class="flex items-center justify-between mb-1">
                                 <span class="text-[10px] font-black uppercase tracking-widest opacity-40">
-                                    {{ fragment.type === 'file' ? fragment.metadata?.filename : 'Insight' }}
+                                    {{ fragment.type === 'file' ? (fragment.metadata?.filename || 'File') : 'Insight' }}
                                 </span>
                             </div>
                             <p class="text-xs leading-relaxed opacity-80 italic">"{{ truncate(fragment.content, 180) }}"</p>
