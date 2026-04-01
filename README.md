@@ -33,15 +33,16 @@ Powered by Ollama. Arkhein utilizes a Multi-Stage Sovereign Arbiter pipeline. It
   - Efficient: Optimized for 8GB-16GB RAM (Mistral + Nomic).
   - Elite: High-precision reasoning for 32GB+ RAM (Qwen3 Suite).
 
-### The Memory (Self-Healing SSOT)
+### The Memory (Atomic & State-Aware)
 SQLite is the ultimate Single Source of Truth. Vektor is the disposable binary accelerator.
-- Hot-Swap Reconciliation: Unbreakable background indexing using shadow partitions. 
-- Dimension Integrity: Automatic detection of vector standards from SQLite chunks.
-- Zero-Downtime Rebuilds: The archive stays online even during massive re-indexing.
+- Atomic Partition Scoping: Every operation is isolated via a re-entrant locking mechanism to prevent static race conditions between the UI and background workers.
+- State Integrity Hashing: Uses a `binary_hash` system to detect drift between the SQLite SSOT and the Vektor binary, eliminating redundant O(N) rebuilds.
+- Fail-Safe Stability: 5-second non-blocking locks and timeouts ensure the application remains responsive even during heavy indexing.
 
 ### The Hand (The Magic Touch)
 Arkhein commands the filesystem with surgical precision but never without the Operator's intent.
 - Strategic Commands: /create, /move, /organize, /delete.
+- Guided Onboarding: "Lead-by-the-Hand" UX locks folder authorization and indexing until the necessary intelligence models are verified as installed.
 - Human-in-the-Loop: Every action requires a verified Strategic Plan. You remain the final authority.
 
 ## Operation Protocol
@@ -55,10 +56,10 @@ Arkhein commands the filesystem with surgical precision but never without the Op
    ```
 3. Prepare the Efficient Profile (Standard):
    ```bash
-   ollama pull mistral
-   ollama pull nomic-embed-text
+   ollama pull mistral:latest
+   ollama pull nomic-embed-text:latest
    ```
-4. Configure: Go to Settings, authorize your silos, and monitor the System Heartbeat.
+4. Configure: Launch Arkhein. The system will self-seed target defaults and guide you through the initial model verification. Authorized your silos and monitor the System Heartbeat.
 
 ## The Sovereign Archivist
 A centralized module for global RAG and system intelligence. It is the librarian of your digital fortress. Use it to search across all authorized silos or to analyze the architecture itself.
