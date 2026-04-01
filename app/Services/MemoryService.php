@@ -4,11 +4,13 @@ namespace App\Services;
 
 use App\Models\Knowledge;
 use App\Models\Setting;
+use App\Models\ManagedFolder;
 use Centamiv\Vektor\Core\Config;
 use Centamiv\Vektor\Services\Indexer;
 use Centamiv\Vektor\Services\Searcher;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 class MemoryService
 {
@@ -18,258 +20,74 @@ class MemoryService
     public function __construct()
     {
         $this->basePath = storage_path('app/vektor');
-        Log::info("Arkhein Vektor: Initializing at " . $this->basePath);
-        $this->setPartition(null);
+        Log::debug("Arkhein Vektor: Base path set to " . $this->basePath);
     }
 
-    /**
-     * Switch the active Vektor partition.
-     * Vektor uses static Config, so we must set the directory before any Vektor operation.
-     */
-    public function setPartition(?int $folderId, bool $shadow = false): self
-    {
-        $this->currentFolderId = $folderId;
-        $path = $this->getPartitionPath($folderId, $shadow);
+    protected bool $isScoped = false;
 
-        if (!File::isDirectory($path)) {
-            Log::info("Arkhein Vektor: Creating directory " . $path);
-            File::makeDirectory($path, 0755, true);
+    /**
+     * Wrap an operation in a partition-safe scope.
+     * Prevents static race conditions and ensures locking.
+     */
+    protected function withScope(?int $folderId, callable $callback)
+    {
+        // Re-entrant check: if we are already in a scope, just run the callback
+        if ($this->isScoped) {
+            return $callback($this->getPartitionPath($folderId));
         }
 
-        $absolutePath = (string) realpath($path);
-        Log::info("Arkhein Vektor: Directing Vektor to " . $absolutePath . " (Shadow: " . ($shadow ? 'YES' : 'NO') . ")");
-        Config::setDataDir($absolutePath);
-        return $this;
+        return $this->withLock($folderId, function () use ($folderId, $callback) {
+            $this->isScoped = true;
+            try {
+                $path = $this->getPartitionPath($folderId);
+                
+                if (!File::isDirectory($path)) {
+                    File::makeDirectory($path, 0755, true);
+                }
+
+                // Set static Vektor config right before execution
+                Config::setDataDir((string) realpath($path));
+                
+                return $callback($path);
+            } finally {
+                $this->isScoped = false;
+            }
+        });
     }
 
     protected function getPartitionPath(?int $folderId, bool $shadow = false): string
     {
-        $base = storage_path('app/vektor');
         $suffix = $shadow ? '_shadow' : '';
         return $folderId 
-            ? $base . DIRECTORY_SEPARATOR . 'folder_' . $folderId . $suffix
-            : $base . DIRECTORY_SEPARATOR . 'global' . $suffix;
+            ? $this->basePath . DIRECTORY_SEPARATOR . 'folder_' . $folderId . $suffix
+            : $this->basePath . DIRECTORY_SEPARATOR . 'global' . $suffix;
     }
 
-    /**
-     * Prepare a shadow directory for a fresh rebuild.
-     */
-    public function prepareShadow(?int $folderId): string
-    {
-        $path = $this->getPartitionPath($folderId, true);
-        
-        if (File::exists($path)) {
-            File::deleteDirectory($path);
-        }
-        
-        // Use PHP native mkdir for immediate OS feedback
-        if (!mkdir($path, 0755, true)) {
-            Log::error("Arkhein Vektor: Failed to create shadow directory at {$path}");
-            throw new \RuntimeException("Could not create shadow partition.");
-        }
-
-        // IMPORTANT: Force Vektor to look here immediately
-        Config::setDataDir($path);
-        
-        return $path;
-    }
-
-    /**
-     * Atomically swap the shadow index with the live one.
-     */
-    public function swapShadow(?int $folderId): bool
-    {
-        $livePath = $this->getPartitionPath($folderId, false);
-        $shadowPath = $this->getPartitionPath($folderId, true);
-
-        if (!File::isDirectory($shadowPath)) return false;
-
-        try {
-            // Move live to backup, shadow to live, then delete backup
-            $backupPath = $livePath . '_backup';
-            if (File::isDirectory($livePath)) {
-                File::moveDirectory($livePath, $backupPath);
-            }
-            File::moveDirectory($shadowPath, $livePath);
-            if (File::isDirectory($backupPath)) {
-                File::deleteDirectory($backupPath);
-            }
-            return true;
-        } catch (\Throwable $e) {
-            Log::error("Arkhein Vektor: Swap failed: " . $e->getMessage());
-            return false;
-        }
-    }
-    /**
-     * Ensure the index is ready and matched to dimensions.
-     */
-    public function ensureIndex(?int $dimensions = null, ?int $folderId = null)
-    {
-        $folderId = $folderId ?? $this->currentFolderId;
-        
-        // CRITICAL: Synchronize state and clear OS filesystem cache
-        $this->setPartition($folderId);
-        clearstatcache(true);
-
-        // 1. Determine base query for this partition
-        $query = Knowledge::on('nativephp');
-        if ($folderId) {
-            $query->where('metadata->folder_id', $folderId);
-        }
-
-        // 2. Try to detect dimensions from DB
-        if ($dimensions === null) {
-            $firstItem = (clone $query)->first();
-            if ($firstItem && !empty($firstItem->embedding)) {
-                $dimensions = count($firstItem->embedding);
-                Log::debug("Arkhein Vektor: Detected dimensions from SSOT: {$dimensions}");
-            }
-        }
-
-        // 3. Fallback to settings
-        $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-        Config::setDimensions($dimensions);
-
-        $path = Config::getDataDir();
-        $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
-
-        Log::info("Arkhein Vektor: Checking for index at {$vectorFile}");
-
-        if (!File::exists($vectorFile) || filesize($vectorFile) === 0) {
-            if ($query->count() > 0) {
-                Log::info("Arkhein: Binary index missing for partition [{$folderId}]. Rebuilding with detected {$dimensions} dimensions...");
-                return $this->rebuildIndex($dimensions, $folderId);
-            }
-        }
-
-        if ($this->isMismatched($vectorFile, $dimensions)) {
-            Log::warning("Arkhein: Dimension mismatch for partition [{$folderId}] (Expected {$dimensions}). Rebuilding...");
-            return $this->rebuildIndex($dimensions, $folderId);
-        }
-
-        return true;
-    }
-
-    protected function isMismatched(string $path, int $dimensions): bool
-    {
-        if (!File::exists($path)) return false;
-
-        clearstatcache(true, $path);
-        $size = filesize($path);
-
-        if ($size === 0) return false;
-
-        $expectedRowSize = Config::getVectorRowSize();
-        return ($size % $expectedRowSize) !== 0;
-    }
-
-    /**
-     * Rebuild the aggregate global index from all authorized knowledge.
-     */
-    public function rebuildGlobalIndex(?int $dimensions = null): bool
-    {
-        return $this->rebuildIndex($dimensions, null);
-    }
-
-    /**
-     * Rebuild Vektor from Knowledge base for a specific partition.
-     */
-    public function rebuildIndex(?int $dimensions = null, ?int $folderId = null, ?\App\Models\ManagedFolder $folder = null): bool
-    {
-        $folderId = $folderId ?? $this->currentFolderId;
-        $this->setPartition($folderId);
-
-        // Fetch dimensions from settings if not provided
-        $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-
-        return $this->withRebuildLock($folderId, function () use ($dimensions, $folderId, $folder) {
-            Log::info("Arkhein: Rebuilding Vektor index for partition [{$folderId}]. Dimensions: $dimensions");
-
-            $this->clearBinaryFiles($folderId);
-            Config::setDimensions($dimensions);
-
-            // CRITICAL: Ensure directory exists and Vektor knows about it
-            $this->setPartition($folderId);
-
-            $indexer = new Indexer();
-            $query = Knowledge::on('nativephp');
-
-            if ($folderId) {
-                $query->where('metadata->folder_id', $folderId);
-                Log::info("Arkhein Vektor: Rebuilding silo partition [{$folderId}]");
-            } else {
-                Log::info("Arkhein Vektor: Rebuilding global aggregate partition");
-                // NO WHERE CLAUSE = AGGREGATE ALL
-            }
-
-            $total = $query->count();
-            $processed = 0;
-
-            if ($folder) {
-                $folder->update(['current_indexing_file' => 'Optimizing Binary Index...']);
-            }
-
-            $query->chunk(100, function ($items) use ($indexer, $dimensions, $folder, $total, &$processed) {
-                foreach ($items as $item) {
-                    try {
-                        $embedding = $item->embedding;
-                        if (is_string($embedding)) {
-                            $embedding = json_decode($embedding, true);
-                        }
-
-                        if (!is_array($embedding)) continue;
-
-                        // IMPORTANT: Log mismatch instead of just skipping silently
-                        if (count($embedding) !== $dimensions) {
-                            Log::warning("Arkhein Vektor: Dimension mismatch for item {$item->id}. DB: " . count($embedding) . " | Expected: {$dimensions}");
-                            continue;
-                        }
-
-                        $indexer->insert($item->id, $embedding);
-                        $processed++;
-
-                        // Update progress within the final 10% (90-100)
-                        if ($folder && $processed % 50 === 0) {
-                            $subProgress = 90 + (int) (($processed / $total) * 10);
-                            $folder->update(['indexing_progress' => min(99, $subProgress)]);
-                        }
-                    } catch (\Throwable $e) {
-                        Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
-                    }
-                }
-            });
-
-            // Final check: did files appear?
-            $path = Config::getDataDir();
-            $vecFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
-            if (File::exists($vecFile)) {
-                Log::info("Arkhein Vektor: Binary index verified at {$vecFile}. Size: " . filesize($vecFile) . " bytes.");
-            } else {
-                Log::error("Arkhein Vektor: FAILED to create binary index at {$vecFile}. Path attempted: " . $path);
-            }
-
-            return true;
-        });
-    }
-
-    protected function withRebuildLock(?int $folderId, callable $callback): bool
+    protected function withLock(?int $folderId, callable $callback)
     {
         $path = $this->getPartitionPath($folderId);
-        $lockPath = $path . DIRECTORY_SEPARATOR . 'rebuild.lock';
+        File::ensureDirectoryExists($path);
+        
+        $lockPath = $path . DIRECTORY_SEPARATOR . 'vektor_atomic.lock';
         $handle = fopen($lockPath, 'c');
 
         if ($handle === false) {
-            Log::error("Arkhein: Failed to create rebuild lock for partition [{$folderId}].");
-            return false;
+            throw new \RuntimeException("Could not create lock file for partition [{$folderId}]");
         }
 
-        try {
-            if (!flock($handle, LOCK_EX)) {
-                Log::error("Arkhein: Failed to acquire rebuild lock for partition [{$folderId}].");
-                return false;
-            }
+        $timeout = 5; // seconds
+        $start = time();
 
-            return (bool) $callback();
+        try {
+            // Attempt non-blocking lock with timeout
+            while (!flock($handle, LOCK_EX | LOCK_NB)) {
+                if (time() - $start >= $timeout) {
+                    throw new \RuntimeException("Timeout acquiring lock for partition [{$folderId}] after {$timeout} seconds.");
+                }
+                usleep(250000); // Wait 250ms
+            }
+            
+            return $callback();
         } finally {
             flock($handle, LOCK_UN);
             fclose($handle);
@@ -277,14 +95,125 @@ class MemoryService
     }
 
     /**
-     * Save any piece of knowledge into a partition.
+     * Ensure the index is ready and matches the current state.
+     */
+    public function ensureIndex(?int $dimensions = null, ?int $folderId = null): bool
+    {
+        return $this->withScope($folderId, function () use ($dimensions, $folderId) {
+            $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+            Config::setDimensions($dimensions);
+
+            $currentHash = $this->computeStateHash($folderId, $dimensions);
+            $storedHash = $this->getStoredHash($folderId);
+
+            $path = Config::getDataDir();
+            $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
+
+            if (!File::exists($vectorFile) || filesize($vectorFile) === 0 || $currentHash !== $storedHash) {
+                Log::info("Arkhein Vektor: Integrity mismatch for partition [{$folderId}]. Rebuilding...");
+                return $this->rebuildIndex($dimensions, $folderId);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * Compute a unique hash for the current state of a partition.
+     */
+    protected function computeStateHash(?int $folderId, int $dimensions): string
+    {
+        $query = Knowledge::on('nativephp');
+        if ($folderId) {
+            $query->where('metadata->folder_id', $folderId);
+        }
+
+        $count = $query->count();
+        $lastUpdate = $query->latest('updated_at')->value('updated_at') ?? 'never';
+
+        return md5("v1|{$folderId}|{$dimensions}|{$count}|{$lastUpdate}");
+    }
+
+    protected function getStoredHash(?int $folderId): ?string
+    {
+        if ($folderId) {
+            return ManagedFolder::on('nativephp')->find($folderId)?->binary_hash;
+        }
+        return Setting::get('global_binary_hash');
+    }
+
+    protected function updateStoredHash(?int $folderId, string $hash): void
+    {
+        if ($folderId) {
+            ManagedFolder::on('nativephp')->where('id', $folderId)->update(['binary_hash' => $hash]);
+        } else {
+            Setting::set('global_binary_hash', $hash);
+        }
+    }
+
+    /**
+     * Rebuild Vektor from Knowledge base for a specific partition.
+     */
+    public function rebuildIndex(?int $dimensions = null, ?int $folderId = null, ?ManagedFolder $folder = null): bool
+    {
+        return $this->withScope($folderId, function () use ($dimensions, $folderId, $folder) {
+            $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
+            Config::setDimensions($dimensions);
+            
+            $this->clearBinaryFiles(Config::getDataDir());
+
+            $indexer = new Indexer();
+            $query = Knowledge::on('nativephp');
+
+            if ($folderId) {
+                $query->where('metadata->folder_id', $folderId);
+            }
+
+            $total = $query->count();
+            $processed = 0;
+
+            $query->chunk(100, function ($items) use ($indexer, $dimensions, $folder, $total, &$processed) {
+                foreach ($items as $item) {
+                    $embedding = $item->embedding;
+                    if (is_string($embedding)) $embedding = json_decode($embedding, true);
+                    if (!is_array($embedding) || count($embedding) !== $dimensions) continue;
+
+                    try {
+                        $indexer->insert($item->id, $embedding);
+                        $processed++;
+
+                        if ($folder && $processed % 50 === 0) {
+                            $progress = 90 + (int) (($processed / $total) * 10);
+                            $folder->update(['indexing_progress' => min(99, $progress)]);
+                        }
+                    } catch (\Throwable $e) {
+                        Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
+                    }
+                }
+            });
+
+            // Update integrity hash
+            $newHash = $this->computeStateHash($folderId, $dimensions);
+            $this->updateStoredHash($folderId, $newHash);
+
+            Log::info("Arkhein Vektor: Rebuilt partition [{$folderId}] with {$processed} items. Hash: {$newHash}");
+            return true;
+        });
+    }
+
+    public function rebuildGlobalIndex(?int $dimensions = null): bool
+    {
+        return $this->rebuildIndex($dimensions, null);
+    }
+
+    /**
+     * Save knowledge into a partition.
      */
     public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null)
     {
-        $folderId = isset($metadata['folder_id']) ? (int) $metadata['folder_id'] : null;
+        $folderId = $metadata['folder_id'] ?? null;
 
         try {
-            // 1. Persistence in SSOT (SQLite) - ALWAYS DO THIS
             Knowledge::on('nativephp')->updateOrCreate(
                 ['id' => $id],
                 [
@@ -295,29 +224,25 @@ class MemoryService
                     'metadata' => $metadata
                 ]
             );
-            // If we are in bulk mode, we skip live binary insertion
-            // and rely on the rebuildIndex() at the end.
-            if ($skipIndex) {
-                return true;
-            }
 
-            // 2. Index in Folder Partition (if applicable)
+            if ($skipIndex) return true;
+
+            // Live insertion for small updates
             if ($folderId) {
-                $this->ensureIndex(count($embedding), $folderId);
-                $this->setPartition($folderId); // CRITICAL
-                $indexer = new Indexer();
-                $indexer->insert($id, $embedding);
+                $this->withScope($folderId, function() use ($id, $embedding, $folderId) {
+                    (new Indexer())->insert($id, $embedding);
+                    $this->updateStoredHash($folderId, $this->computeStateHash($folderId, count($embedding)));
+                });
             }
 
-            // 3. Index in Global Partition (Aggregate)
-            $this->ensureIndex(count($embedding), null);
-            $this->setPartition(null); // CRITICAL
-            $indexer = new Indexer();
-            $indexer->insert($id, $embedding);
+            $this->withScope(null, function() use ($id, $embedding) {
+                (new Indexer())->insert($id, $embedding);
+                $this->updateStoredHash(null, $this->computeStateHash(null, count($embedding)));
+            });
 
             return true;
         } catch (\Exception $e) {
-            Log::error("Failed to save to Knowledge Index [{$folderId}]: " . $e->getMessage());
+            Log::error("Failed to save to Knowledge Index: " . $e->getMessage());
             return false;
         }
     }
@@ -329,44 +254,38 @@ class MemoryService
     {
         $threshold = $threshold ?? config('knowledge.recall_threshold', 0.65);
 
-        // CRITICAL: Explicitly set partition to null if null provided,
-        // don't rely on currentFolderId which might be a Vantage Card.
-        $this->setPartition($folderId);
+        return $this->withScope($folderId, function () use ($vector, $limit, $threshold, $folderId) {
+            try {
+                // Pre-search integrity check
+                $dimensions = count($vector);
+                Config::setDimensions($dimensions);
+                
+                $storedHash = $this->getStoredHash($folderId);
+                $path = Config::getDataDir();
+                $vectorFile = $path . DIRECTORY_SEPARATOR . 'vector.bin';
 
-        try {
-            $this->ensureIndex(count($vector), $folderId);
-            $this->setPartition($folderId); // CRITICAL
-            $searcher = new Searcher();
-            $results = $searcher->search($vector, $limit);
-
-            // Self-healing: if DB has data for this partition but Vektor returns 0
-            if (empty($results)) {
-                $query = Knowledge::on('nativephp');
-                if ($folderId) {
-                    $query->where('metadata->folder_id', $folderId);
+                if (!File::exists($vectorFile) || $storedHash === null) {
+                    Log::warning("Arkhein Vektor: Partition [{$folderId}] search requested but index missing. Forcing check...");
+                    $this->ensureIndex($dimensions, $folderId);
                 }
-                // For global (null), check total count.
 
-                if ($query->count() > 0) {
-                    Log::warning("Arkhein: Search returned 0 hits for partition [{$folderId}] but DB is not empty. Rebuilding...");
-                    $this->rebuildIndex(count($vector), $folderId);
-                    $results = $searcher->search($vector, $limit);
-                }
+                $results = (new Searcher())->search($vector, $limit);
+                return $this->parseResults($results, $threshold);
+            } catch (\Exception $e) {
+                Log::error("Vektor search failed for partition [{$folderId}]: " . $e->getMessage());
+                return [];
             }
-
-            return $this->parseResults($results, $threshold);
-        } catch (\Exception $e) {
-            Log::error("Vektor search failed for partition [{$folderId}]: " . $e->getMessage());
-            return [];
-        }
+        });
     }
 
     public function reset(): bool
     {
         try {
-            File::cleanDirectory(storage_path('app/vektor'));
+            File::cleanDirectory($this->basePath);
             Knowledge::on('nativephp')->delete();
             \App\Models\Document::on('nativephp')->delete();
+            Setting::on('nativephp')->where('key', 'global_binary_hash')->delete();
+            ManagedFolder::on('nativephp')->update(['binary_hash' => null]);
             return true;
         } catch (\Throwable $e) {
             Log::error("Failed to reset knowledge base: " . $e->getMessage());
@@ -374,58 +293,24 @@ class MemoryService
         }
     }
 
-    /**
-     * Purge document knowledge for a managed folder.
-     */
-    public function purgeFolderKnowledge(int $folderId): bool
+    protected function clearBinaryFiles(string $path)
     {
-        try {
-            Knowledge::on('nativephp')
-                ->where('type', 'file')
-                ->where('metadata->folder_id', $folderId)
-                ->delete();
-
-            $path = $this->getPartitionPath($folderId);
-            if (File::isDirectory($path)) {
-                File::deleteDirectory($path);
-            }
-
-            return true;
-        } catch (\Throwable $e) {
-            Log::error("Failed to purge folder knowledge: " . $e->getMessage(), ['folder_id' => $folderId]);
-            return false;
-        }
-    }
-
-    protected function clearBinaryFiles(?int $folderId)
-    {
-        $path = $this->getPartitionPath($folderId);
-        $files = [
-            $path . '/vector.bin',
-            $path . '/graph.bin',
-            $path . '/meta.bin',
-            $path . '/vektor.lock',
-        ];
-
+        $files = ['vector.bin', 'graph.bin', 'meta.bin', 'vektor.lock'];
         foreach ($files as $file) {
-            if (File::exists($file)) {
-                File::delete($file);
-            }
+            $f = $path . DIRECTORY_SEPARATOR . $file;
+            if (File::exists($f)) File::delete($f);
         }
     }
 
     protected function parseResults($results, float $threshold = 0)
     {
         $parsed = [];
-
         foreach ($results as $result) {
             $id = $result['id'];
             $similarity = 1.0 - ($result['score'] ?? 1.0);
-
             if ($similarity < $threshold) continue;
 
             $item = Knowledge::on('nativephp')->with('document')->find($id);
-
             if ($item) {
                 $parsed[] = [
                     'id' => $id,
@@ -441,7 +326,30 @@ class MemoryService
                 ];
             }
         }
-
         return $parsed;
+    }
+
+    /**
+     * Purge document knowledge for a managed folder.
+     */
+    public function purgeFolderKnowledge(int $folderId): bool
+    {
+        return $this->withScope($folderId, function() use ($folderId) {
+            try {
+                Knowledge::on('nativephp')
+                    ->where('metadata->folder_id', $folderId)
+                    ->delete();
+
+                $path = Config::getDataDir();
+                if (File::isDirectory($path)) {
+                    File::deleteDirectory($path);
+                }
+
+                return true;
+            } catch (\Throwable $e) {
+                Log::error("Failed to purge folder knowledge: " . $e->getMessage(), ['folder_id' => $folderId]);
+                return false;
+            }
+        });
     }
 }

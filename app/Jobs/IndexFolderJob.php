@@ -36,8 +36,6 @@ class IndexFolderJob implements ShouldQueue
          $this->withIndexLock(function () use ($archive, $memory) {
              Log::info("Arkhein: Starting background indexing for folder: {$this->folder->name}");
 
-             // CRITICAL: Set partition before updating UI or starting index
-             $memory->setPartition($this->folder->id);
              $this->folder->update(['is_indexing' => true]);
 
              try {

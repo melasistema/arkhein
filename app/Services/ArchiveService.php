@@ -43,9 +43,6 @@ class ArchiveService
             return ['files' => 0, 'chunks' => 0];
         }
 
-        // Ensure MemoryService is targeting the correct partition before we start
-        $this->memory->setPartition($folder->id);
-
         Log::info("Arkhein: Starting " . ($forceFull ? 'FULL' : 'INCREMENTAL') . " index for @{$folder->name}");
 
         if ($forceFull) {

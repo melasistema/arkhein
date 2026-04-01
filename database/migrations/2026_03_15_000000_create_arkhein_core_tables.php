@@ -26,6 +26,7 @@ return new class extends Migration
             $table->boolean('is_indexing')->default(false);
             $table->integer('indexing_progress')->default(0);
             $table->string('current_indexing_file')->nullable();
+            $table->string('binary_hash')->nullable(); // To track Vektor index integrity
             $table->timestamp('last_indexed_at')->nullable();
             $table->timestamps();
         });
