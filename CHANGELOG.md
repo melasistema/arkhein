@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.5] - 2026-04-01
+
+### Added
+- **Atomic Partition Scoping:** Implemented a re-entrant locking mechanism in `MemoryService` to isolate Vektor partitions and prevent static race conditions.
+- **State Integrity Hashing:** Added a `binary_hash` system (md5 of count/dimensions/update_time) to detect drift between SQLite SSOT and Vektor binary indices, eliminating redundant O(N) rebuilds.
+- **Lead-by-the-Hand Onboarding:** Strict UI locking for folder authorization and indexing until recommended models are verified as installed.
+- **Smart Model Matching:** Auto-detection of `mistral` vs `mistral:latest` and sane config-based fallbacks during first boot and settings initialization.
+- **Non-Blocking Boot Checks:** Memory integrity verification is now dispatched `afterResponse()` to prevent UI hangs on startup.
+- **Fail-Safe Locking:** Added 5-second non-blocking locks with timeouts to `MemoryService` to ensure application responsiveness under high load.
+
+### Changed
+- **Model Standardization:** Standardized all backend, frontend, and documentation prerequisites on the `:latest` tag (e.g., `mistral:latest`, `nomic-embed-text:latest`).
+- **Ollama Model Guide:** Refined the settings guide to a vertical "smartphone-style" layout for better readability of long pull commands.
+- **Settings Controller Refactoring:** Removed redundant detection logic in favor of a centralized "Smart Matching" service provider.
+
+### Fixed
+- **Memory Deadlocks:** Resolved self-deadlock issues in `MemoryService` where scoped methods attempted to re-acquire their own locks.
+- **Maximum Execution Time Errors:** Fixed PHP timeouts during long-running binary index checks via non-blocking lock management.
+- **Settings Initialization:** Fixed an issue where `migrate:fresh` left the UI with empty model selections despite models being present in Ollama.
+
 ## [0.0.4] - 2026-03-28
 
 ### Added
