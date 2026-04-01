@@ -57,15 +57,25 @@ const isSettingsLocked = ref(true); // Locked by default for safety
 const foldersList = ref([...props.folders]);
 const pollInterval = ref<any>(null);
 
-// Check if models are present in Ollama's local tags
-const isRecommendedEfficientInstalled = computed(() => props.models.some(m => m.name === 'mistral' || m.name === 'mistral:latest'));
-const isRecommendedEfficientEmbeddingInstalled = computed(() => props.models.some(m => m.name === 'nomic-embed-text' || m.name === 'nomic-embed-text:latest'));
+// Helpers for flexible matching
+const clean = (name: string) => name.replace(':latest', '');
 
-const isRecommendedEliteInstalled = computed(() => props.models.some(m => m.name === 'qwen3:8b' || m.name === 'qwen3:8b:latest'));
-const isRecommendedEliteEmbeddingInstalled = computed(() => props.models.some(m => m.name === 'qwen3-embedding:4b' || m.name === 'qwen3-embedding:4b:latest'));
+// Check if models are present in Ollama's local tags
+const isRecommendedEfficientInstalled = computed(() => props.models.some(m => clean(m.name) === 'mistral'));
+const isRecommendedEfficientEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'nomic-embed-text'));
+
+const isRecommendedEliteInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3:8b'));
+const isRecommendedEliteEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3-embedding:4b'));
 
 const showOnboardingWarning = computed(() => {
     return !isRecommendedEfficientInstalled.value || !isRecommendedEfficientEmbeddingInstalled.value;
+});
+
+const isSetupComplete = computed(() => {
+    if (!props.is_ollama_online) return false;
+    
+    const installed = props.models.map(m => m.name);
+    return installed.includes(form.llm_model) && installed.includes(form.embedding_model);
 });
 
 // Check if ANY folder is currently indexing
@@ -74,7 +84,7 @@ const isAnyFolderIndexing = computed(() => {
 });
 
 // The master busy state
-const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value || isRebuilding.value);
+const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value || isRebuilding.value || !isSetupComplete.value);
 
 const toggleLock = () => {
     if (!isSettingsLocked.value) {
@@ -86,22 +96,14 @@ const toggleLock = () => {
     }
 };
 
-const findBestMatch = (baseName: string) => {
-    const installed = props.models.map(m => m.name);
-    if (installed.includes(baseName)) return baseName;
-    if (installed.includes(`${baseName}:latest`)) return `${baseName}:latest`;
-    // Fallback to the base name if nothing found, so the select remains consistent
-    return baseName;
-};
-
 const setComputeProfile = (profile: 'efficient' | 'elite') => {
     if (profile === 'efficient') {
-        form.llm_model = findBestMatch('mistral');
-        form.embedding_model = findBestMatch('nomic-embed-text');
+        form.llm_model = 'mistral:latest';
+        form.embedding_model = 'nomic-embed-text:latest';
         form.embedding_dimensions = 768;
     } else {
-        form.llm_model = findBestMatch('qwen3:8b');
-        form.embedding_model = findBestMatch('qwen3-embedding:4b');
+        form.llm_model = 'qwen3:8b:latest';
+        form.embedding_model = 'qwen3-embedding:4b:latest';
         form.embedding_dimensions = 1056;
     }
     isSettingsLocked.value = false;
@@ -266,11 +268,11 @@ const removeFolder = (id: number) => {
                                     type="button"
                                     @click="setComputeProfile('efficient')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="form.llm_model.includes('mistral') ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    :class="clean(form.llm_model) === 'mistral' ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
                                 >
                                     <div class="flex items-center justify-between">
                                         <span class="text-[10px] font-black uppercase tracking-widest text-primary">Efficient</span>
-                                        <Zap v-if="form.llm_model.includes('mistral')" class="h-3 w-3 text-primary fill-current" />
+                                        <Zap v-if="clean(form.llm_model) === 'mistral'" class="h-3 w-3 text-primary fill-current" />
                                     </div>
                                     <span class="text-xs font-bold">Mistral + Nomic</span>
                                     <span class="text-[9px] leading-tight text-muted-foreground">Standard Mac (8GB-16GB RAM). Balanced speed and accuracy.</span>
@@ -280,11 +282,11 @@ const removeFolder = (id: number) => {
                                     type="button"
                                     @click="setComputeProfile('elite')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="form.llm_model.includes('qwen3:8b') ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    :class="clean(form.llm_model) === 'qwen3:8b' ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
                                 >
                                     <div class="flex items-center justify-between">
                                         <span class="text-[10px] font-black uppercase tracking-widest text-indigo-500">Elite</span>
-                                        <Sparkles v-if="form.llm_model.includes('qwen3:8b')" class="h-3 w-3 text-indigo-500 fill-current" />
+                                        <Sparkles v-if="clean(form.llm_model) === 'qwen3:8b'" class="h-3 w-3 text-indigo-500 fill-current" />
                                     </div>
                                     <span class="text-xs font-bold">Qwen3 Suite</span>
                                     <span class="text-[9px] leading-tight text-muted-foreground">Pro/Max Specs (32GB+ RAM). Superior analytical reasoning.</span>
@@ -323,22 +325,50 @@ const removeFolder = (id: number) => {
 
                             <!-- 2. Normal Onboarding / Configuration UI -->
                             <template v-else>
+                                <!-- Incomplete Setup Warning -->
+                                <div v-if="showOnboardingWarning" class="mb-6 p-6 rounded-[2.5rem] bg-amber-500/5 border border-amber-500/20 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
+                                    <div class="p-4 rounded-3xl bg-amber-500/10 text-amber-600 shadow-inner">
+                                        <Lock class="h-8 w-8" />
+                                    </div>
+                                    <div class="space-y-2">
+                                        <h3 class="text-lg font-black uppercase tracking-tighter text-amber-600">Action Required: Memory Setup</h3>
+                                        <p class="text-xs text-muted-foreground leading-relaxed max-w-sm">
+                                            Indexing and folder authorization are **disabled** until the recommended models are downloaded to your machine.
+                                        </p>
+                                    </div>
+                                    
+                                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 font-mono text-[9px] text-amber-700 w-full space-y-2 text-left">
+                                        <div class="flex items-center justify-between">
+                                            <span>ollama pull mistral:latest</span>
+                                            <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-3 w-3" />
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>ollama pull nomic-embed-text:latest</span>
+                                            <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-3 w-3" />
+                                        </div>
+                                    </div>
+
+                                    <p class="text-[10px] opacity-60 uppercase tracking-widest font-black text-amber-600 animate-pulse">
+                                        System Locked • Pull Models to Continue
+                                    </p>
+                                </div>
+
                                 <!-- Compute Profile Guide -->
                                 <div class="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col gap-4">
                                     <div class="flex items-center gap-2 text-primary">
                                         <Database class="h-4 w-4" />
                                         <span class="text-xs font-bold uppercase tracking-wider">Ollama Model Guide</span>
                                     </div>
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="grid grid-cols-1 gap-6">
                                         <div class="space-y-2">
                                             <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Efficient (Standard)</span>
                                             <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
                                                 <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull mistral</span>
+                                                    <span class="opacity-70">ollama pull mistral:latest</span>
                                                     <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
                                                 <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull nomic-embed-text</span>
+                                                    <span class="opacity-70">ollama pull nomic-embed-text:latest</span>
                                                     <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
                                             </div>
@@ -347,11 +377,11 @@ const removeFolder = (id: number) => {
                                             <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Elite (High-Precision)</span>
                                             <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
                                                 <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull qwen3:8b</span>
+                                                    <span class="opacity-70">ollama pull qwen3:8b:latest</span>
                                                     <ShieldCheck v-if="isRecommendedEliteInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
                                                 <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull qwen3-embedding:4b</span>
+                                                    <span class="opacity-70">ollama pull qwen3-embedding:4b:latest</span>
                                                     <ShieldCheck v-if="isRecommendedEliteEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
                                             </div>

@@ -29,46 +29,39 @@ class SettingsController extends Controller
 
         $folders = ManagedFolder::all();
 
-        // 1. Fetch Current DB Values
+        $recommendedLLM = config('services.ollama.model', 'mistral:latest');
+        $recommendedEmbedding = config('services.ollama.embedding_model', 'nomic-embed-text:latest');
+        $recommendedDimensions = (int) config('services.ollama.embedding_dimensions', 768);
+
+        // 1. Fetch Available Models for Smart Matching
+        $availableNames = collect($models)->pluck('name')->all();
+        $findBest = function($target) use ($availableNames) {
+            if (in_array($target, $availableNames)) return $target;
+            $cleanTarget = str_replace(':latest', '', $target);
+            if (in_array($cleanTarget, $availableNames)) return $cleanTarget;
+            if (in_array("{$cleanTarget}:latest", $availableNames)) return "{$cleanTarget}:latest";
+            return $target;
+        };
+
+        // 2. Fetch Current DB Values with Smart Fallbacks
         $currentLLM = Setting::get('llm_model');
+        if (!$currentLLM) {
+            $currentLLM = $findBest($recommendedLLM);
+        }
+
         $currentEmbedding = Setting::get('embedding_model');
-        $currentDimensions = Setting::get('embedding_dimensions');
-
-        // 2. SMART DETECTION: If settings are empty (First Run), check if recommended models are in Ollama
-        $recommendedLLM = config('services.ollama.model');
-        $recommendedEmbedding = config('services.ollama.embedding_model');
-        $recommendedDimensions = (int) config('services.ollama.embedding_dimensions');
-
-        // SANITIZATION: If DB has the OLD default (2560) but we are now on Nomic (768), fix it
-        if ((int)$currentDimensions === 2560 && $currentEmbedding === 'nomic-embed-text:latest') {
-            Setting::set('embedding_dimensions', 768);
-            $currentDimensions = 768;
+        if (!$currentEmbedding) {
+            $currentEmbedding = $findBest($recommendedEmbedding);
         }
 
-        $isOptimized = true;
-
-        if ($isOllamaOnline && (!$currentLLM || !$currentEmbedding)) {
-            $availableModelNames = collect($models)->pluck('name')->all();
-
-            // Auto-detect LLM
-            if (in_array($recommendedLLM, $availableModelNames)) {
-                Setting::set('llm_model', $recommendedLLM);
-                $currentLLM = $recommendedLLM;
-            }
-
-            // Auto-detect Embedding
-            if (in_array($recommendedEmbedding, $availableModelNames)) {
-                Setting::set('embedding_model', $recommendedEmbedding);
-                Setting::set('embedding_dimensions', $recommendedDimensions);
-                $currentEmbedding = $recommendedEmbedding;
-                $currentDimensions = $recommendedDimensions;
-            }
-        }
+        $currentDimensions = (int) Setting::get('embedding_dimensions', $recommendedDimensions);
 
         // 3. Determine if the current setup matches the "Optimized" Arkhein state
-        $isOptimized = ($currentLLM === $recommendedLLM) && 
-                      ($currentEmbedding === $recommendedEmbedding) && 
-                      ((int)$currentDimensions === (int)$recommendedDimensions);
+        $clean = fn($m) => str_replace(':latest', '', $m);
+        
+        $isOptimized = ($clean($currentLLM) === $clean($recommendedLLM)) && 
+                      ($clean($currentEmbedding) === $clean($recommendedEmbedding)) && 
+                      ($currentDimensions === $recommendedDimensions);
 
         $data = [
             'models' => $models,
@@ -86,9 +79,9 @@ class SettingsController extends Controller
                 'dimensions' => $recommendedDimensions,
             ],
             'current' => [
-                'llm_model' => $currentLLM ?? '',
-                'embedding_model' => $currentEmbedding ?? '',
-                'embedding_dimensions' => (int) ($currentDimensions ?? $recommendedDimensions),
+                'llm_model' => $currentLLM,
+                'embedding_model' => $currentEmbedding,
+                'embedding_dimensions' => $currentDimensions,
             ]
         ];
 
