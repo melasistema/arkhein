@@ -11,6 +11,8 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // No users needed for Arkhein local-first architecture.
+        \App\Models\Setting::set('llm_model', 'mistral');
+        \App\Models\Setting::set('embedding_model', 'nomic-embed-text:latest');
+        \App\Models\Setting::set('embedding_dimensions', '768');
     }
 }

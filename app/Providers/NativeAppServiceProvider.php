@@ -17,6 +17,9 @@ class NativeAppServiceProvider implements ProvidesPhpIni
             ->title('Arkhein Assistant')
             ->maximized();
 
+        // Ensure default settings exist (Self-seeding for production/dmg)
+        $this->ensureDefaults();
+
         // Proactive Memory Integrity Check (Non-blocking)
         dispatch(function () {
             try {
@@ -26,6 +29,21 @@ class NativeAppServiceProvider implements ProvidesPhpIni
                 \Illuminate\Support\Facades\Log::error("Arkhein: Boot-time indexing check failed: " . $e->getMessage());
             }
         })->afterResponse();
+    }
+
+    protected function ensureDefaults(): void
+    {
+        $defaults = [
+            'llm_model' => config('services.ollama.model'),
+            'embedding_model' => config('services.ollama.embedding_model'),
+            'embedding_dimensions' => config('services.ollama.embedding_dimensions'),
+        ];
+
+        foreach ($defaults as $key => $value) {
+            if (!\App\Models\Setting::get($key)) {
+                \App\Models\Setting::set($key, $value);
+            }
+        }
     }
 
     /**
