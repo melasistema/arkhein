@@ -30,6 +30,7 @@ class SettingsController extends Controller
         $folders = ManagedFolder::all();
 
         $recommendedLLM = config('services.ollama.model', 'mistral:latest');
+        $recommendedVision = config('services.ollama.vision_model', 'qwen3-vl:latest');
         $recommendedEmbedding = config('services.ollama.embedding_model', 'nomic-embed-text:latest');
         $recommendedDimensions = (int) config('services.ollama.embedding_dimensions', 768);
 
@@ -47,6 +48,11 @@ class SettingsController extends Controller
         $currentLLM = Setting::get('llm_model');
         if (!$currentLLM) {
             $currentLLM = $findBest($recommendedLLM);
+        }
+
+        $currentVision = Setting::get('vision_model');
+        if (!$currentVision) {
+            $currentVision = $findBest($recommendedVision);
         }
 
         $currentEmbedding = Setting::get('embedding_model');
@@ -75,11 +81,13 @@ class SettingsController extends Controller
             ],
             'recommended' => [
                 'llm' => $recommendedLLM,
+                'vision' => $recommendedVision,
                 'embedding' => $recommendedEmbedding,
                 'dimensions' => $recommendedDimensions,
             ],
             'current' => [
                 'llm_model' => $currentLLM,
+                'vision_model' => $currentVision,
                 'embedding_model' => $currentEmbedding,
                 'embedding_dimensions' => $currentDimensions,
             ]

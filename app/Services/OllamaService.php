@@ -195,6 +195,40 @@ class OllamaService
         return $response->json('embedding');
     }
 
+    public function generateWithImages(string $prompt, array $imagePaths, ?string $model = null): string
+    {
+        $selectedModel = $model ?? Setting::get('vision_model', config('services.ollama.vision_model', 'qwen3-vl:latest'));
+
+        if (empty($selectedModel)) {
+            Log::error("Ollama vision failed: No vision model configured.");
+            return "Vision engine unreachable.";
+        }
+
+        $images = [];
+        foreach ($imagePaths as $path) {
+            if (file_exists($path)) {
+                $images[] = base64_encode(file_get_contents($path));
+            }
+        }
+
+        $payload = [
+            'model' => $selectedModel,
+            'prompt' => $prompt,
+            'images' => $images,
+            'stream' => false,
+        ];
+
+        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
+
+        if ($response->failed()) {
+            Log::error("Ollama vision failed: " . $response->body());
+            return "Vision analysis failed.";
+        }
+
+        return $response->json('response') ?? "Vision engine returned empty response.";
+    }
+
     /**
      * List local models.
      */

@@ -12,6 +12,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         \App\Models\Setting::set('llm_model', 'mistral');
+        \App\Models\Setting::set('vision_model', 'qwen3-vl');
         \App\Models\Setting::set('embedding_model', 'nomic-embed-text:latest');
         \App\Models\Setting::set('embedding_dimensions', '768');
     }

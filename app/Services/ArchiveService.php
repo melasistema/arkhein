@@ -6,16 +6,19 @@ use App\Models\ManagedFolder;
 use App\Models\Knowledge;
 use App\Models\Setting;
 use App\Models\Document;
-use App\Services\Extractors\ExtractorInterface;
-use App\Services\Extractors\TextExtractor;
-use App\Services\Extractors\PdfExtractor;
+use App\Services\Extractors\MediaProcessorInterface;
+use App\Services\Extractors\TextProcessor;
+use App\Services\Extractors\PdfProcessor;
+use App\Services\Extractors\VisualProcessor;
+use App\ValueObjects\MediaResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class ArchiveService
 {
-    protected array $extractors = [];
+    /** @var MediaProcessorInterface[] */
+    protected array $processors = [];
     protected array $ignoreFolders = ['.git', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
     protected int $chunkSize;
     protected int $chunkOverlap = 100;
@@ -25,13 +28,14 @@ class ArchiveService
         protected MemoryService $memory
     ) {
         $this->chunkSize = config('arkhein.vantage.chunk_size', 1000);
-        $this->registerDefaultExtractors();
+        $this->registerDefaultProcessors();
     }
 
-    protected function registerDefaultExtractors(): void
+    protected function registerDefaultProcessors(): void
     {
-        $this->extractors[] = new TextExtractor();
-        $this->extractors[] = new PdfExtractor();
+        $this->processors[] = new TextProcessor();
+        $this->processors[] = new PdfProcessor();
+        $this->processors[] = new VisualProcessor($this->ollama);
     }
 
     /**
@@ -100,15 +104,15 @@ class ArchiveService
     }
 
     /**
-     * Index a single file as a Vessel with Fragments.
+     * Index a single file using the Media Core pipeline.
      */
     public function indexFile(ManagedFolder $folder, string $filePath, bool $force = false): array
     {
         if (!File::exists($filePath)) return ['chunks' => 0];
 
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
+        $mimeType = File::mimeType($filePath);
         $relativePath = str_replace($folder->path . DIRECTORY_SEPARATOR, '', $filePath);
-        $lastModified = File::lastModified($filePath);
         $checksum = md5_file($filePath);
 
         // 1. Vessel Incremental Check
@@ -120,38 +124,56 @@ class ArchiveService
             return ['chunks' => 0];
         }
 
-        $extractor = $this->getExtractor($extension);
-        if (!$extractor) return ['chunks' => 0];
+        // 2. Select Processor
+        $processor = $this->getProcessor($extension, $mimeType);
+        if (!$processor) {
+            Log::debug("Arkhein: No processor found for {$relativePath} ({$mimeType})");
+            return ['chunks' => 0];
+        }
 
-        $content = $extractor->extract($filePath);
-        $content = $this->sanitizeUtf8($content);
-        if (empty(trim($content))) return ['chunks' => 0];
+        // 3. Process Media
+        $result = $processor->process($filePath);
+        $content = $this->sanitizeUtf8($result->content);
+        
+        if (empty(trim($content)) && empty($result->fragments)) {
+            return ['chunks' => 0];
+        }
 
-        // 2. Prepare Vessel (Document)
+        // 4. Prepare Vessel (Document)
         if (!$vessel) {
             $vessel = Document::create([
                 'folder_id' => $folder->id,
                 'path' => $relativePath,
                 'filename' => basename($filePath),
                 'extension' => $extension,
+                'mime_type' => $mimeType,
                 'checksum' => $checksum,
-                'metadata' => [
+                'metadata' => array_merge($result->metadata, [
                     'depth' => count(explode(DIRECTORY_SEPARATOR, $relativePath)),
                     'subfolder' => dirname($relativePath) === '.' ? '' : dirname($relativePath)
-                ]
+                ])
             ]);
         } else {
             $vessel->fragments()->delete();
-            $vessel->update(['checksum' => $checksum, 'last_indexed_at' => now()]);
+            $vessel->update([
+                'checksum' => $checksum, 
+                'mime_type' => $mimeType,
+                'last_indexed_at' => now(),
+                'metadata' => array_merge($vessel->metadata ?? [], $result->metadata)
+            ]);
         }
 
-        // 3. Optional: Generate high-level summary if the file is large
-        if (strlen($content) > 2000) {
-            $vessel->update(['summary' => $this->generateSummary($content)]);
+        // 5. High-Level Summary
+        $summary = $result->summary;
+        if (!$summary && strlen($content) > 2000) {
+            $summary = $this->generateSummary($content);
+        }
+        if ($summary) {
+            $vessel->update(['summary' => $summary]);
         }
 
-        // 4. Create Fragments (Knowledge chunks)
-        $chunks = $this->splitContent($content);
+        // 6. Create Fragments
+        $chunks = !empty($result->fragments) ? $result->fragments : $this->splitContent($content);
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
         $chunksCreated = 0;
 
@@ -163,7 +185,7 @@ class ArchiveService
                     Str::uuid()->toString(),
                     $chunk,
                     $embedding,
-                    'file',
+                    $result->type,
                     [
                         'path' => $relativePath,
                         'filename' => $vessel->filename,
@@ -171,10 +193,10 @@ class ArchiveService
                         'total_chunks' => count($chunks),
                         'folder_id' => $folder->id,
                         'folder_name' => $folder->name,
-                        'last_modified' => $lastModified,
                     ],
                     true, // skipIndex: bulk mode
-                    $vessel->id // Pass document_id as direct argument
+                    $vessel->id,
+                    $mimeType
                 );
                 $chunksCreated++;
             }
@@ -191,11 +213,11 @@ class ArchiveService
         return $this->ollama->generate($prompt);
     }
 
-    protected function getExtractor(string $extension): ?ExtractorInterface
+    protected function getProcessor(string $extension, string $mimeType): ?MediaProcessorInterface
     {
-        foreach ($this->extractors as $extractor) {
-            if ($extractor->supports($extension)) {
-                return $extractor;
+        foreach ($this->processors as $processor) {
+            if ($processor->supports($extension, $mimeType)) {
+                return $processor;
             }
         }
         return null;

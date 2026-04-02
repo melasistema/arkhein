@@ -16,6 +16,7 @@ class Knowledge extends Model
     protected $fillable = [
         'document_id',
         'type',
+        'mime_type',
         'content',
         'embedding',
         'metadata',

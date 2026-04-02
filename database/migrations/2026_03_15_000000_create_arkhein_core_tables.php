@@ -38,6 +38,7 @@ return new class extends Migration
             $table->string('path'); // Relative path within silo
             $table->string('filename');
             $table->string('extension')->nullable();
+            $table->string('mime_type')->nullable(); // For multimodal routing
             $table->text('summary')->nullable(); // High-level "Vessel Map"
             $table->string('checksum')->nullable(); // To detect content changes
             $table->json('metadata')->nullable(); // Structural info (folder depth, etc.)
@@ -51,7 +52,8 @@ return new class extends Migration
         Schema::create('knowledge', function (Blueprint $table) {
             $table->uuid('id')->primary();
             $table->foreignUuid('document_id')->nullable()->constrained('documents')->cascadeOnDelete();
-            $table->string('type')->index(); // file_part, fact, insight
+            $table->string('type')->index(); // file_part, fact, insight, visual_description
+            $table->string('mime_type')->nullable(); // Fragment-level media identification
             $table->text('content');
             $table->json('embedding');
             $table->json('metadata')->nullable();

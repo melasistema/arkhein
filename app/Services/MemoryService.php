@@ -209,7 +209,7 @@ class MemoryService
     /**
      * Save knowledge into a partition.
      */
-    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null)
+    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null, ?string $mimeType = null)
     {
         $folderId = $metadata['folder_id'] ?? null;
 
@@ -219,6 +219,7 @@ class MemoryService
                 [
                     'document_id' => $documentId,
                     'type' => $type,
+                    'mime_type' => $mimeType,
                     'content' => $content,
                     'embedding' => $embedding,
                     'metadata' => $metadata

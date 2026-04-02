@@ -18,6 +18,7 @@ class Document extends Model
         'path',
         'filename',
         'extension',
+        'mime_type',
         'summary',
         'checksum',
         'metadata',

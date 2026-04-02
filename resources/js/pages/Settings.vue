@@ -32,11 +32,13 @@ const props = defineProps<{
     };
     recommended: {
         llm: string;
+        vision: string;
         embedding: string;
         dimensions: number;
     };
     current: {
         llm_model: string;
+        vision_model: string;
         embedding_model: string;
         embedding_dimensions: number;
     };
@@ -62,20 +64,23 @@ const clean = (name: string) => name.replace(':latest', '');
 
 // Check if models are present in Ollama's local tags
 const isRecommendedEfficientInstalled = computed(() => props.models.some(m => clean(m.name) === 'mistral'));
+const isRecommendedVisionInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3-vl'));
 const isRecommendedEfficientEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'nomic-embed-text'));
 
 const isRecommendedEliteInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3:8b'));
 const isRecommendedEliteEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3-embedding:4b'));
 
 const showOnboardingWarning = computed(() => {
-    return !isRecommendedEfficientInstalled.value || !isRecommendedEfficientEmbeddingInstalled.value;
+    return !isRecommendedEfficientInstalled.value || !isRecommendedVisionInstalled.value || !isRecommendedEfficientEmbeddingInstalled.value;
 });
 
 const isSetupComplete = computed(() => {
     if (!props.is_ollama_online) return false;
-    
-    const installed = props.models.map(m => m.name);
-    return installed.includes(form.llm_model) && installed.includes(form.embedding_model);
+
+    const installed = props.models.map(m => clean(m.name));
+    return installed.includes(clean(form.llm_model)) &&
+           installed.includes(clean(form.vision_model)) &&
+           installed.includes(clean(form.embedding_model));
 });
 
 // Check if ANY folder is currently indexing
@@ -99,10 +104,12 @@ const toggleLock = () => {
 const setComputeProfile = (profile: 'efficient' | 'elite') => {
     if (profile === 'efficient') {
         form.llm_model = 'mistral:latest';
+        form.vision_model = 'qwen3-vl:latest';
         form.embedding_model = 'nomic-embed-text:latest';
         form.embedding_dimensions = 768;
     } else {
         form.llm_model = 'qwen3:8b:latest';
+        form.vision_model = 'qwen3-vl:latest';
         form.embedding_model = 'qwen3-embedding:4b:latest';
         form.embedding_dimensions = 1056;
     }
@@ -111,7 +118,7 @@ const setComputeProfile = (profile: 'efficient' | 'elite') => {
 
 const rebuildIndex = async () => {
     if (isBusy.value) return;
-    
+
     isRebuilding.value = true;
     reconcileProgress.value = 0;
 
@@ -128,7 +135,7 @@ const pollStatus = async () => {
     try {
         const res = await axios.get('/settings');
         foldersList.value = res.data.folders;
-        
+
         // Update Reconciliation State
         isRebuilding.value = res.data.reconcile.status === 'running';
         reconcileProgress.value = res.data.reconcile.progress;
@@ -167,12 +174,13 @@ onUnmounted(() => {
 
 const form = useForm({
     llm_model: props.current.llm_model,
+    vision_model: props.current.vision_model,
     embedding_model: props.current.embedding_model,
     embedding_dimensions: props.current.embedding_dimensions,
 });
 
 const isMemoryResetRequired = computed(() => {
-    return form.embedding_model !== props.current.embedding_model || 
+    return form.embedding_model !== props.current.embedding_model ||
            Number(form.embedding_dimensions) !== Number(props.current.embedding_dimensions);
 });
 
@@ -227,7 +235,7 @@ const removeFolder = (id: number) => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col gap-8 p-8 overflow-y-auto max-w-6xl mx-auto w-full">
-            
+
             <div class="flex items-center gap-3">
                 <div class="p-2 rounded-xl bg-primary/10 text-primary">
                     <SettingsIcon class="h-6 w-6" />
@@ -239,7 +247,7 @@ const removeFolder = (id: number) => {
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                
+
                 <!-- Left Column: Core Intelligence -->
                 <div class="flex flex-col gap-8">
                     <Card>
@@ -264,7 +272,7 @@ const removeFolder = (id: number) => {
                         <CardContent>
                             <!-- 0. Compute Profile Selection -->
                             <div v-if="is_ollama_online" class="mb-6 grid grid-cols-2 gap-3">
-                                <button 
+                                <button
                                     type="button"
                                     @click="setComputeProfile('efficient')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
@@ -278,7 +286,7 @@ const removeFolder = (id: number) => {
                                     <span class="text-[9px] leading-tight text-muted-foreground">Standard Mac (8GB-16GB RAM). Balanced speed and accuracy.</span>
                                 </button>
 
-                                <button 
+                                <button
                                     type="button"
                                     @click="setComputeProfile('elite')"
                                     class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
@@ -304,7 +312,7 @@ const removeFolder = (id: number) => {
                                         Arkhein cannot connect to **Ollama** on `localhost:11434`. This is required for all local intelligence and memory operations.
                                     </p>
                                 </div>
-                                
+
                                 <div class="grid grid-cols-1 gap-3 w-full">
                                     <a href="https://ollama.com/download" target="_blank" class="w-full">
                                         <Button variant="outline" class="w-full h-11 rounded-2xl border-red-500/20 hover:bg-red-500/10 text-red-600 font-bold gap-2">
@@ -336,11 +344,15 @@ const removeFolder = (id: number) => {
                                             Indexing and folder authorization are **disabled** until the recommended models are downloaded to your machine.
                                         </p>
                                     </div>
-                                    
+
                                     <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 font-mono text-[9px] text-amber-700 w-full space-y-2 text-left">
                                         <div class="flex items-center justify-between">
                                             <span>ollama pull mistral:latest</span>
                                             <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-3 w-3" />
+                                        </div>
+                                        <div class="flex items-center justify-between">
+                                            <span>ollama pull qwen3-vl:latest</span>
+                                            <ShieldCheck v-if="isRecommendedVisionInstalled" class="h-3 w-3" />
                                         </div>
                                         <div class="flex items-center justify-between">
                                             <span>ollama pull nomic-embed-text:latest</span>
@@ -368,6 +380,10 @@ const removeFolder = (id: number) => {
                                                     <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
                                                 <div class="flex justify-between">
+                                                    <span class="opacity-70">ollama pull qwen3-vl:latest</span>
+                                                    <ShieldCheck v-if="isRecommendedVisionInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                </div>
+                                                <div class="flex justify-between">
                                                     <span class="opacity-70">ollama pull nomic-embed-text:latest</span>
                                                     <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
                                                 </div>
@@ -390,7 +406,7 @@ const removeFolder = (id: number) => {
                                 </div>
 
                                 <form @submit.prevent="submit" class="space-y-6">
-                                
+
                                 <div v-if="isMemoryResetRequired && !isSettingsLocked" class="rounded-2xl bg-amber-500/5 p-4 border border-amber-500/20">
                                     <div class="flex gap-3">
                                         <AlertTriangle class="h-5 w-5 text-amber-500 shrink-0" />
@@ -405,6 +421,20 @@ const removeFolder = (id: number) => {
                                     <div class="space-y-2">
                                         <Label for="llm_model">Primary Assistant Model (LLM)</Label>
                                         <Select v-model="form.llm_model">
+                                            <SelectTrigger class="rounded-xl">
+                                                <SelectValue placeholder="Select a model" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
+                                                    {{ model.name }}
+                                                </SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <Label for="vision_model">Vision Assistant Model (Multimodal)</Label>
+                                        <Select v-model="form.vision_model">
                                             <SelectTrigger class="rounded-xl">
                                                 <SelectValue placeholder="Select a model" />
                                             </SelectTrigger>
@@ -486,7 +516,7 @@ const removeFolder = (id: number) => {
                                         <span>{{ reconcileProgress }}%</span>
                                     </div>
                                     <div class="h-2 w-full bg-blue-500/10 rounded-full overflow-hidden">
-                                        <div 
+                                        <div
                                             class="h-full bg-blue-500 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
                                             :style="{ width: reconcileProgress + '%' }"
                                         ></div>
@@ -533,9 +563,9 @@ const removeFolder = (id: number) => {
                                 </div>
 
                                 <div class="pt-2">
-                                    <Button 
-                                        variant="outline" 
-                                        size="sm" 
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
                                         class="w-full rounded-xl text-xs h-9 border-dashed"
                                         @click="rebuildIndex"
                                         :disabled="isBusy"

@@ -35,6 +35,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     {
         // 1. Fetch Target Defaults from Config (Sane Baseline)
         $targetLLM = config('services.ollama.model');
+        $targetVision = config('services.ollama.vision_model');
         $targetEmbedding = config('services.ollama.embedding_model');
         $targetDimensions = config('services.ollama.embedding_dimensions');
 
@@ -59,6 +60,10 @@ class NativeAppServiceProvider implements ProvidesPhpIni
         // 3. Blindly push them if missing.
         if (!\App\Models\Setting::get('llm_model')) {
             \App\Models\Setting::set('llm_model', $findBest($targetLLM));
+        }
+
+        if (!\App\Models\Setting::get('vision_model')) {
+            \App\Models\Setting::set('vision_model', $findBest($targetVision));
         }
 
         if (!\App\Models\Setting::get('embedding_model')) {
