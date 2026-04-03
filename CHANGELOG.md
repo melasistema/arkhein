@@ -10,17 +10,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Sovereign Media Core:** Implemented a new extensible `MediaProcessorInterface` and `MediaResult` value object for robust multimodal ingestion.
 - **Visual Intelligence:** Introduced `VisualProcessor` leveraging `OllamaService::generateWithImages` for image-to-text conversion using `qwen3-vl`.
+- **Presence vs. Essence Ingestion:** Added `PresenceProcessor` for fast, searchable metadata-only ingestion of unknown or unauthorized file formats.
+- **Controlled Vision:** Per-folder authorization for visual indexing with dedicated UI toggles in both Settings and Vantage Hub.
+- **Media Promotion Logic:** Automatic "upgrade" of presence-only records to full visual analysis when sight is authorized for a silo.
+- **High-Precision Intent Detection:** Refined the Help Dispatcher with a `PRECISION` intent to identify quantitative queries (totals, lists) and guide users toward deep Vantage analysis.
 - **MIME Type Tracking:** Added `mime_type` columns to `documents` and `knowledge` tables for improved media data tracking.
 - **Vision Model Support:** Integrated `qwen3-vl` vision model across default settings, seeder, and UI.
-- **Settings UI Enhancement:** Added a dedicated "Vision Assistant" selection to the settings panel with corresponding validation and onboarding guidance.
+- **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
-- **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type, enabling support for diverse media formats beyond text and PDFs.
-- **Extractor to Processor Transition:** Migrated existing `TextExtractor` and `PdfExtractor` to the new `MediaProcessorInterface` (as `TextProcessor` and `PdfProcessor`).
-- **Memory Service `save` Method:** Updated to accept `mime_type` for fragment-level media identification.
-- **Default Settings Propagation:** Ensured the `qwen3-vl` vision model is consistently propagated through `NativeAppServiceProvider`, `SettingsController`, and the default database seeder.
+- **Operational Protocols Refactoring:** Renamed `boundaries` to `protocols` in configuration with balanced limits (`silo_recursion_limit: 20`, `inference_timeout: 600s`).
+- **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type and implemented throttled progress updates to reduce SQLite lock contention.
+- **Ingestion Robustness:** Increased `IndexFolderJob` timeout to 1 hour and refined ignore logic to only skip junk folders at the silo root.
+- **Lead-by-the-Hand UX:** Enhanced onboarding with strict multi-model verification (LLM, Vision, Embedding) before unlocking system actions.
 
 ### Fixed
+- **Subfolder Indexing:** Resolved an issue where deeply nested files were being over-zealously ignored by the ingestion engine.
 - **Settings Initialization (Vision):** Addressed issues with vision model selections not being correctly initialized in the UI after `migrate:fresh`.
 
 ## [0.0.5] - 2026-04-01
