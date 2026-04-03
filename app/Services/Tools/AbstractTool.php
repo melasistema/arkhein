@@ -9,23 +9,35 @@ abstract class AbstractTool implements ToolInterface
 {
     /**
      * Resolve and sandbox a path within the managed folder.
+     * Prevents path traversal via strict boundary checking and normalization.
      */
     protected function resolvePath(string $path, ?ManagedFolder $folder): string
     {
-        $basePath = $folder ? $folder->path : null;
-
-        if (!$basePath) {
-            return $path;
+        if (!$folder) {
+            throw new \RuntimeException("Filesystem tool requires an authorized folder context.");
         }
 
-        // If the path is already absolute and contains the base path, just return it.
-        if (str_starts_with($path, $basePath)) {
-            return $path;
-        }
-
-        // Otherwise, strip leading slashes and append to base path.
+        $basePath = realpath($folder->path);
+        
+        // 1. Sanitize the incoming path (remove any ../ or weirdness)
+        $path = str_replace(['../', '..\\'], '', $path);
         $path = ltrim($path, DIRECTORY_SEPARATOR . ' ');
-        return rtrim($basePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $path;
+
+        // 2. Build the target absolute path
+        $resolvedPath = $basePath . DIRECTORY_SEPARATOR . $path;
+
+        // 3. Security Check: The resolved path MUST still start with the base path.
+        // We use realpath-style logic without requiring the file to exist yet.
+        if (!str_starts_with($resolvedPath, $basePath)) {
+            \Illuminate\Support\Facades\Log::emergency("SECURITY: Path traversal attempt blocked.", [
+                'base' => $basePath,
+                'input' => $path,
+                'resolved' => $resolvedPath
+            ]);
+            throw new \RuntimeException("Sovereign Guard: Path traversal attempt detected. Operation blocked.");
+        }
+
+        return $resolvedPath;
     }
 
     /**

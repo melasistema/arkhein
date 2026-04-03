@@ -33,14 +33,14 @@ class DeleteFileTool extends AbstractTool
         Log::info("Tool: delete_file -> {$path}");
 
         if (!File::exists($path)) {
-            $this->purgeKnowledge($path);
+            $this->purgeKnowledge($path, $folder);
             return ['success' => true];
         }
 
         try {
             $success = File::delete($path);
             if ($success) {
-                $this->purgeKnowledge($path);
+                $this->purgeKnowledge($path, $folder);
             }
             return ['success' => $success];
         } catch (\Throwable $e) {
@@ -48,11 +48,13 @@ class DeleteFileTool extends AbstractTool
         }
     }
 
-    protected function purgeKnowledge(string $path)
+    protected function purgeKnowledge(string $absolutePath, ?ManagedFolder $folder)
     {
-        \App\Models\Knowledge::on('nativephp')
-            ->where('type', 'file')
-            ->where('metadata->path', $path)
+        if (!$folder) return;
+
+        $relativePath = str_replace($folder->path . DIRECTORY_SEPARATOR, '', $absolutePath);
+        \App\Models\Document::where('folder_id', $folder->id)
+            ->where('path', $relativePath)
             ->delete();
     }
 

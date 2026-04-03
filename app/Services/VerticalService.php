@@ -218,8 +218,22 @@ class VerticalService
                 $instruction = $action['params']['instruction'] ?? null;
                 if ($instruction) {
                     $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
-                    $prompt = "You are drafting a professional document based on specific knowledge.\nGenerate high-quality, well-structured markdown content.\n\n### KNOWLEDGE:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n### TASK:\n{$instruction}";
-                    $action['params']['content'] = $this->ollama->generate($prompt);
+                    
+                    // The 'Document Architect' Protocol: Higher density, better structure
+                    $prompt = "You are the Arkhein Document Architect.\n" .
+                             "TASK: Draft a professional markdown document based on the provided KNOWLEDGE and INSTRUCTION.\n\n" .
+                             "KNOWLEDGE FRAGMENTS:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n" .
+                             "INSTRUCTION: {$instruction}\n\n" .
+                             "RULES:\n" .
+                             "1. Use professional, clear language.\n" .
+                             "2. Structure with appropriate Markdown headers (##, ###).\n" .
+                             "3. Be concise but exhaustive regarding the provided facts.\n" .
+                             "4. Do NOT add preamble (e.g., 'Here is the file...'). Output ONLY the document content.\n\n" .
+                             "DOCUMENT CONTENT:";
+
+                    $action['params']['content'] = $this->ollama->generate($prompt, null, [
+                        'options' => ['temperature' => 0.2, 'num_ctx' => 8192]
+                    ]);
                     $action['description'] = $this->actionService->describe($action['type'], $action['params']);
                     continue;
                 }
@@ -227,6 +241,7 @@ class VerticalService
                 if ($defaultContent) {
                     $action['params']['content'] = $defaultContent;
                 } else {
+                    // Fallback to recent history if no specific instruction was extracted
                     $candidates = $vertical->interactions()->where('role', 'assistant')->latest()->limit(10)->get();
                     foreach ($candidates as $msg) {
                         $meta = $msg->metadata;
@@ -234,7 +249,8 @@ class VerticalService
                         $intent = $meta['intent'] ?? 'CHAT';
                         if (in_array($intent, ['COMMAND_HELP', 'CONFIRMATION', 'COMMAND_SYNC'])) continue;
                         if (str_contains($msg->content, "Command parsed") || str_contains($msg->content, "prepared the plan")) continue;
-                        $cleanContent = preg_replace('/^### PREVIEW:[\s\n]*/i', '', $msg->content);
+                        
+                        $cleanContent = preg_replace('/^### (PREVIEW|DRAFT|SUMMARY):[\s\n]*/i', '', $msg->content);
                         $action['params']['content'] = $cleanContent;
                         break;
                     }

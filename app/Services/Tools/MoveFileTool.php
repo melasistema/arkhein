@@ -36,14 +36,6 @@ class MoveFileTool extends AbstractTool
         
         Log::info("Tool: move_file -> {$from} to {$to}");
 
-        clearstatcache();
-
-        // Self-Healing: Try recursive search if direct path fails
-        if (!File::exists($from) && $folder) {
-            $actualSource = $this->findActualSource($params['from'], $folder);
-            if ($actualSource) $from = $actualSource;
-        }
-
         if (!File::exists($from)) {
             return ['success' => false, 'error' => "Source file not found."];
         }
@@ -53,29 +45,16 @@ class MoveFileTool extends AbstractTool
         try {
             File::ensureDirectoryExists(dirname($to), 0777);
             
-            // Try atomic rename
-            if (@rename($from, $to)) {
-                clearstatcache();
-                return ['success' => true];
-            }
-
-            // Fallback: Copy + Delete
-            if (File::copy($from, $to)) {
-                File::delete($from);
-                $success = true;
-            }
-
-            if ($success) {
-                clearstatcache();
-                
+            // Try atomic move
+            if (File::move($from, $to)) {
                 if ($folder) {
-                    // 1. Remove old path from index
-                    \App\Models\Knowledge::on('nativephp')
-                        ->where('type', 'file')
-                        ->where('metadata->path', $from)
+                    // 1. Remove old document and fragments from index
+                    $oldRelativePath = str_replace($folder->path . DIRECTORY_SEPARATOR, '', $from);
+                    \App\Models\Document::where('folder_id', $folder->id)
+                        ->where('path', $oldRelativePath)
                         ->delete();
                     
-                    // 2. Index new path
+                    // 2. Index new path (re-syncs fragments)
                     app(\App\Services\ArchiveService::class)->indexFile($folder, $to);
                 }
 

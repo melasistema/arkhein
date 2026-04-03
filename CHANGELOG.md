@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Silo Guard Protocol:** Implemented mathematically absolute path traversal protection in all filesystem tools via strict boundary checking and normalization.
+- **Document Architect Protocol:** Introduced a highly structured generation protocol for the `/create` command, significantly improving file drafting quality on SLMs (Mistral/Qwen).
+- **Contextual Arbiter:** Refined intent detection to be context-aware, preventing conversational affirmative tokens (e.g., "OK") from hijacking the file execution loop.
 - **Cognitive Fragment Architecture:** Re-architected ingestion to anchor knowledge fragments to their parent document's context, significantly improving SLM accuracy.
 - **Silo Manifest Protocol:** Implemented structural awareness in Vantage Hub, providing assistants with a complete map of all documents and summaries in a silo.
 - **Anchored SSOT:** Added permanent `vector_anchor` persistence in the `knowledge` table, ensuring the SQLite database stores both content and the cognitive intent used for indexing.
@@ -26,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
+- **Ollama Context Expansion:** Increased default `num_ctx` to 16,384 across all intelligence modules for better long-context reasoning.
 - **Operational Protocols Refactoring:** Renamed `boundaries` to `protocols` in configuration with balanced limits (`silo_recursion_limit: 20`, `inference_timeout: 600s`).
 - **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type and implemented throttled progress updates to reduce SQLite lock contention.
 - **Ingestion Robustness:** Increased `IndexFolderJob` timeout to 1 hour and refined ignore logic to only skip junk folders at the silo root.
@@ -33,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vision Authorization UX:** Implemented context-aware confirmation dialogs for visual analysis to manage compute cost expectations.
 
 ### Fixed
+- **Deep Creation Failure:** Resolved an issue where `/create` failed to populate files with RAG-driven content under the 'Efficient' profile.
+- **Orchestrator Memory Leak:** Fixed a behavior where the assistant lost track of conversations after affirmative user input.
+- **Shadow Rebuild Crash:** Resolved an "undefined method" error in `MemoryService` that broke the force reconciliation process.
 - **Structural Blindness:** Resolved an issue where Vantage assistants missed files that weren't direct vector matches by implementing the Silo Manifest.
 - **Subfolder Indexing:** Resolved an issue where deeply nested files were being over-zealously ignored by the ingestion engine.
 - **Processor Hijacking:** Restricted `PresenceProcessor` to ensure text and PDF files are correctly routed to deep-indexing processors.
@@ -84,8 +91,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CSRF Mismatch:** Resolved 419 errors during long-running SSE fetch requests.
 - **Duplicate ID Errors:** Fixed binary index collisions during large file indexing via bulk mode logic.
 - **Path Resolution:** Fixed stale storage path issues in background workers using absolute NativePHP path resolution.
-
-### Known Problems (To Be Fixed)
-- **Deep Creation Content Failure:** The `/create` magic command may fail to populate documents with the expected RAG-driven content when using the "Efficient" profile (Mistral). This is likely due to the small LLM's inability to handle complex multi-stage placeholder filling. Requires investigation into more robust extraction prompts.
 
 [0.0.4]: https://github.com/melasistema/arkhein/compare/v0.0.3...v0.0.4
