@@ -29,17 +29,17 @@ class MemoryService
      * Wrap an operation in a partition-safe scope.
      * Prevents static race conditions and ensures locking.
      */
-    protected function withScope(?int $folderId, callable $callback)
+    public function withScope(?int $folderId, callable $callback, bool $shadow = false)
     {
         // Re-entrant check: if we are already in a scope, just run the callback
         if ($this->isScoped) {
-            return $callback($this->getPartitionPath($folderId));
+            return $callback($this->getPartitionPath($folderId, $shadow));
         }
 
-        return $this->withLock($folderId, function () use ($folderId, $callback) {
+        return $this->withLock($folderId, function () use ($folderId, $callback, $shadow) {
             $this->isScoped = true;
             try {
-                $path = $this->getPartitionPath($folderId);
+                $path = $this->getPartitionPath($folderId, $shadow);
                 
                 if (!File::isDirectory($path)) {
                     File::makeDirectory($path, 0755, true);
@@ -91,6 +91,57 @@ class MemoryService
         } finally {
             flock($handle, LOCK_UN);
             fclose($handle);
+        }
+    }
+
+    /**
+     * Prepare a shadow directory for zero-downtime rebuilds.
+     */
+    public function prepareShadow(?int $folderId = null): void
+    {
+        $this->withScope($folderId, function() use ($folderId) {
+            $shadowPath = $this->getPartitionPath($folderId, true);
+            if (File::isDirectory($shadowPath)) {
+                File::deleteDirectory($shadowPath);
+            }
+            File::makeDirectory($shadowPath, 0755, true);
+            $this->clearBinaryFiles($shadowPath);
+        });
+    }
+
+    /**
+     * Swap the shadow index with the primary index.
+     */
+    public function swapShadow(?int $folderId = null): void
+    {
+        $this->withScope($folderId, function() use ($folderId) {
+            $primaryPath = $this->getPartitionPath($folderId);
+            $shadowPath = $this->getPartitionPath($folderId, true);
+
+            if (!File::isDirectory($shadowPath)) {
+                throw new \RuntimeException("Cannot swap: Shadow directory does not exist.");
+            }
+
+            // Perform atomic swap
+            $this->swapDirectories($shadowPath, $primaryPath);
+        });
+    }
+
+    protected function swapDirectories(string $source, string $target): void
+    {
+        $temp = $target . '_old_' . time();
+        
+        // 1. Target -> Temp
+        if (File::isDirectory($target)) {
+            File::moveDirectory($target, $temp);
+        }
+
+        // 2. Source -> Target
+        File::moveDirectory($source, $target);
+
+        // 3. Cleanup Temp
+        if (File::isDirectory($temp)) {
+            File::deleteDirectory($temp);
         }
     }
 
@@ -209,7 +260,7 @@ class MemoryService
     /**
      * Save knowledge into a partition.
      */
-    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null, ?string $mimeType = null)
+    public function save(string $id, string $content, array $embedding, string $type = 'chat', array $metadata = [], bool $skipIndex = false, ?string $documentId = null, ?string $mimeType = null, ?string $vectorAnchor = null)
     {
         $folderId = $metadata['folder_id'] ?? null;
 
@@ -221,6 +272,7 @@ class MemoryService
                     'type' => $type,
                     'mime_type' => $mimeType,
                     'content' => $content,
+                    'vector_anchor' => $vectorAnchor,
                     'embedding' => $embedding,
                     'metadata' => $metadata
                 ]

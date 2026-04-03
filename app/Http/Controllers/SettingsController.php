@@ -102,12 +102,32 @@ class SettingsController extends Controller
 
     public function toggleVisualIndexing(ManagedFolder $folder)
     {
+        if ($folder->sync_status !== ManagedFolder::STATUS_IDLE) {
+            return back()->withErrors(['folder' => "Cannot modify vision settings while a task is queued or running."]);
+        }
+
+        $oldValue = $folder->allow_visual_indexing;
+        $newValue = !$oldValue;
+
         $folder->update([
-            'allow_visual_indexing' => !$folder->allow_visual_indexing
+            'allow_visual_indexing' => $newValue
         ]);
 
-        // If toggled ON, trigger a background sync to "promote" existing presence-only media
-        if ($folder->allow_visual_indexing) {
+        // Smart Sync: Check if any images need promotion (if ON) or demotion (if OFF)
+        $query = \App\Models\Document::where('folder_id', $folder->id)
+            ->where('mime_type', 'like', 'image/%');
+
+        if ($newValue) {
+            $needsWork = $query->where('metadata->is_presence_only', true)->exists();
+        } else {
+            $needsWork = $query->where(function($q) {
+                $q->whereNull('metadata->is_presence_only')
+                  ->orWhere('metadata->is_presence_only', false);
+            })->exists();
+        }
+
+        if ($needsWork) {
+            $folder->update(['sync_status' => ManagedFolder::STATUS_QUEUED]);
             \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
         }
 
@@ -119,13 +139,13 @@ class SettingsController extends Controller
         $folders = ManagedFolder::all();
         
         foreach ($folders as $folder) {
-            // Prefer NativePHP's background queue connection for desktop UX.
+            $folder->update(['sync_status' => ManagedFolder::STATUS_QUEUED]);
             \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
         }
 
         return back()->with([
-            'success' => "Indexing started for {$folders->count()} folders in the background.",
-            'folders' => ManagedFolder::all() // Push fresh state
+            'success' => "Indexing tasks queued for {$folders->count()} folders.",
+            'folders' => ManagedFolder::all()
         ]);
     }
 
@@ -140,7 +160,10 @@ class SettingsController extends Controller
         if ($path) {
             $folder = ManagedFolder::updateOrCreate(
                 ['path' => $path],
-                ['name' => basename($path)]
+                [
+                    'name' => basename($path),
+                    'sync_status' => ManagedFolder::STATUS_QUEUED
+                ]
             );
 
             // Automatically trigger indexing for the new silo

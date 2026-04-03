@@ -8,7 +8,12 @@ class ManagedFolder extends Model
 {
     protected $connection = 'nativephp';
 
-    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing', 'indexing_progress', 'current_indexing_file', 'binary_hash', 'allow_visual_indexing'];
+    const STATUS_IDLE = 'idle';
+    const STATUS_QUEUED = 'queued';
+    const STATUS_INDEXING = 'indexing';
+    const STATUS_STALE = 'stale';
+
+    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing', 'indexing_progress', 'current_indexing_file', 'binary_hash', 'allow_visual_indexing', 'sync_status'];
 
     protected $casts = [
         'allow_visual_indexing' => 'boolean',

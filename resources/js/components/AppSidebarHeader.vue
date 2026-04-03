@@ -2,9 +2,16 @@
 import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem } from '@/types';
-import { ref, onMounted, onUnmounted } from 'vue';
-import { Activity, RefreshCw } from 'lucide-vue-next';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
+import { Activity, RefreshCw, HardDrive, BrainCircuit, AlertCircle, ChevronDown, Clock } from 'lucide-vue-next';
 import axios from 'axios';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 withDefaults(
     defineProps<{
@@ -17,6 +24,12 @@ withDefaults(
 
 const heartbeat = ref<any>(null);
 const pollInterval = ref<any>(null);
+
+// High-intensity state: More than 1 folder indexing or reconciling memory
+const isRedBusy = computed(() => {
+    if (!heartbeat.value) return false;
+    return heartbeat.value.is_reconciling || heartbeat.value.indexing_count > 1;
+});
 
 const fetchHeartbeat = async () => {
     try {
@@ -49,22 +62,94 @@ onUnmounted(() => {
         </div>
 
         <!-- Global System Heartbeat -->
-        <div v-if="heartbeat?.is_busy" class="flex items-center gap-3 animate-in fade-in zoom-in-95 duration-500">
-            <div class="flex flex-col items-end">
-                <span class="text-[9px] font-black uppercase tracking-widest text-primary flex items-center gap-1.5">
-                    <Activity class="h-2.5 w-2.5 animate-pulse" />
-                    System Heartbeat
-                </span>
-                <span class="text-[8px] opacity-50 font-bold truncate max-w-[150px]">
-                    {{ heartbeat.details.status_text }}
-                </span>
-            </div>
-            <div class="relative h-8 w-8 flex items-center justify-center">
-                <RefreshCw class="h-4 w-4 text-primary animate-spin opacity-30" />
-                <div v-if="heartbeat.is_reconciling" class="absolute inset-0 flex items-center justify-center">
-                    <span class="text-[7px] font-black">{{ heartbeat.reconcile_progress }}%</span>
+        <DropdownMenu v-if="heartbeat?.is_busy">
+            <DropdownMenuTrigger as-child>
+                <button class="flex items-center gap-3 px-3 py-1.5 rounded-xl transition-all hover:bg-muted group animate-in fade-in zoom-in-95 duration-500 outline-none">
+                    <div class="flex flex-col items-end">
+                        <span 
+                            class="text-[9px] font-black uppercase tracking-widest flex items-center gap-1.5 transition-colors"
+                            :class="isRedBusy ? 'text-red-500' : 'text-primary'"
+                        >
+                            <Activity 
+                                class="h-2.5 w-2.5" 
+                                :class="isRedBusy ? 'animate-[pulse_1s_infinite]' : 'animate-pulse'" 
+                            />
+                            {{ isRedBusy ? 'System Busy' : 'System Heartbeat' }}
+                        </span>
+                        <span class="text-[8px] opacity-50 font-bold truncate max-w-[120px] flex items-center gap-1">
+                            {{ heartbeat.details.status_text }}
+                            <ChevronDown class="h-2 w-2 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        </span>
+                    </div>
+                    <div class="relative h-8 w-8 flex items-center justify-center">
+                        <RefreshCw 
+                            class="h-4 w-4 animate-spin opacity-30" 
+                            :class="isRedBusy ? 'text-red-500' : 'text-primary'"
+                        />
+                        <div v-if="heartbeat.is_reconciling" class="absolute inset-0 flex items-center justify-center">
+                            <span class="text-[7px] font-black" :class="isRedBusy ? 'text-red-500' : 'text-primary'">{{ heartbeat.reconcile_progress }}%</span>
+                        </div>
+                    </div>
+                </button>
+            </DropdownMenuTrigger>
+            
+            <DropdownMenuContent align="end" class="w-64 rounded-2xl p-2 shadow-2xl border-primary/10 bg-card">
+                <DropdownMenuLabel class="text-[10px] uppercase tracking-widest opacity-50 font-black px-3 py-2 flex items-center justify-between">
+                    Active Operations
+                    <div v-if="isRedBusy" class="flex items-center gap-1 text-red-500">
+                        <AlertCircle class="h-2.5 w-2.5" />
+                        High Load
+                    </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                
+                <div class="p-2 space-y-3">
+                    <!-- Memory Reconciliation -->
+                    <div v-if="heartbeat.is_reconciling" class="p-2.5 rounded-xl bg-primary/5 border border-primary/10 space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <BrainCircuit class="h-3 w-3 text-primary" />
+                                <span class="text-[10px] font-bold uppercase">Memory Sync</span>
+                            </div>
+                            <span class="text-[10px] font-black text-primary">{{ heartbeat.reconcile_progress }}%</span>
+                        </div>
+                        <div class="h-1 w-full bg-primary/10 rounded-full overflow-hidden">
+                            <div class="h-full bg-primary transition-all duration-500" :style="{ width: heartbeat.reconcile_progress + '%' }"></div>
+                        </div>
+                    </div>
+
+                    <!-- Folder Indexing -->
+                    <div v-for="folder in heartbeat.details.folders" :key="folder.id" class="p-2.5 rounded-xl bg-muted/50 border border-border/50 space-y-2">
+                        <div class="flex items-center justify-between overflow-hidden">
+                            <div class="flex items-center gap-2 overflow-hidden">
+                                <component 
+                                    :is="folder.sync_status === 'indexing' ? HardDrive : Clock" 
+                                    class="h-3 w-3" 
+                                    :class="folder.sync_status === 'indexing' ? 'text-blue-500' : 'text-amber-500'"
+                                />
+                                <span class="text-[10px] font-bold truncate uppercase">{{ folder.name }}</span>
+                            </div>
+                            <span v-if="folder.sync_status === 'indexing'" class="text-[10px] font-black opacity-40">{{ folder.indexing_progress }}%</span>
+                            <span v-else class="text-[8px] font-black uppercase tracking-tighter opacity-40">Queued</span>
+                        </div>
+                        
+                        <div v-if="folder.sync_status === 'indexing'" class="h-1 w-full bg-border/50 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 transition-all duration-500" :style="{ width: folder.indexing_progress + '%' }"></div>
+                        </div>
+
+                        <p class="text-[8px] text-muted-foreground truncate opacity-60 italic">
+                            {{ folder.sync_status === 'indexing' ? (folder.current_indexing_file || 'Processing...') : 'Waiting for system resources...' }}
+                        </p>
+                    </div>
                 </div>
-            </div>
-        </div>
+
+                <DropdownMenuSeparator />
+                <div class="px-3 py-2 text-center">
+                    <p class="text-[8px] leading-relaxed text-muted-foreground italic">
+                        Arkhein is optimizing your local silos. Intelligence depth may be limited during this phase.
+                    </p>
+                </div>
+            </DropdownMenuContent>
+        </DropdownMenu>
     </header>
 </template>

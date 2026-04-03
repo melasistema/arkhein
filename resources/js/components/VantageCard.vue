@@ -380,10 +380,13 @@ const sendQuery = async () => {
                             variant="ghost" 
                             size="icon" 
                             class="h-7 w-7 rounded-md transition-colors" 
-                            :class="currentVertical.folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground opacity-40'"
-                            :disabled="isTogglingVisual || isSyncing" 
+                            :class="[
+                                currentVertical.folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground opacity-40',
+                                currentVertical.folder.is_indexing ? 'opacity-20 cursor-not-allowed' : ''
+                            ]"
+                            :disabled="isTogglingVisual || isSyncing || currentVertical.folder.is_indexing" 
                             @click="toggleVisual" 
-                            title="Toggle Visual Intelligence"
+                            :title="currentVertical.folder.is_indexing ? 'System busy: Finish indexing before modifying vision' : 'Toggle Visual Intelligence'"
                         >
                             <Loader2 v-if="isTogglingVisual" class="h-3 w-3 animate-spin" />
                             <component v-else :is="currentVertical.folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-3 w-3" />

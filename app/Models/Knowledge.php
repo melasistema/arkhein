@@ -18,6 +18,7 @@ class Knowledge extends Model
         'type',
         'mime_type',
         'content',
+        'vector_anchor',
         'embedding',
         'metadata',
         'importance'

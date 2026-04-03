@@ -11,6 +11,9 @@ use App\Services\Extractors\TextProcessor;
 use App\Services\Extractors\PdfProcessor;
 use App\Services\Extractors\VisualProcessor;
 use App\Services\Extractors\PresenceProcessor;
+use App\Services\Extractors\Splitters\MarkdownSplitter;
+use App\Services\Extractors\Splitters\StandardSplitter;
+use App\ValueObjects\CognitiveFragment;
 use App\ValueObjects\MediaResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +23,7 @@ class ArchiveService
 {
     /** @var MediaProcessorInterface[] */
     protected array $processors = [];
+    protected array $splitters = [];
     protected array $ignoreFolders = ['.git', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
     protected int $chunkSize;
     protected int $chunkOverlap = 100;
@@ -30,6 +34,7 @@ class ArchiveService
     ) {
         $this->chunkSize = config('arkhein.vantage.chunk_size', 1000);
         $this->registerDefaultProcessors();
+        $this->registerDefaultSplitters();
     }
 
     protected function registerDefaultProcessors(): void
@@ -38,6 +43,12 @@ class ArchiveService
         $this->processors[] = new PdfProcessor();
         $this->processors[] = new VisualProcessor($this->ollama);
         $this->processors[] = new PresenceProcessor();
+    }
+
+    protected function registerDefaultSplitters(): void
+    {
+        $this->splitters['md'] = new MarkdownSplitter();
+        $this->splitters['default'] = new StandardSplitter();
     }
 
     /**
@@ -65,7 +76,8 @@ class ArchiveService
         $folder->update([
             'is_indexing' => true,
             'indexing_progress' => 0,
-            'current_indexing_file' => null
+            'current_indexing_file' => null,
+            'sync_status' => ManagedFolder::STATUS_INDEXING
         ]);
 
         $lastUpdateAt = microtime(true);
@@ -105,7 +117,8 @@ class ArchiveService
             'is_indexing' => false,
             'indexing_progress' => 0,
             'current_indexing_file' => null,
-            'last_indexed_at' => now()
+            'last_indexed_at' => now(),
+            'sync_status' => ManagedFolder::STATUS_IDLE
         ]);
 
         return ['files' => $indexedFiles, 'chunks' => $totalChunks];
@@ -128,24 +141,25 @@ class ArchiveService
             ->where('path', $relativePath)
             ->first();
 
-        // Smart Promotion: If we have sight now but only a presence record exists, force promotion
+        // Smart Promotion/Demotion: 
+        // Promotion: We have sight now, but only presence exists.
         $needsPromotion = $vessel && 
                          str_starts_with($mimeType, 'image/') && 
                          $folder->allow_visual_indexing && 
                          ($vessel->metadata['is_presence_only'] ?? false);
 
-        if (!$force && $vessel && $vessel->checksum === $checksum && !$needsPromotion) {
+        // Demotion: We revoked sight, but deep analysis chunks still exist.
+        $needsDemotion = $vessel && 
+                        str_starts_with($mimeType, 'image/') && 
+                        !$folder->allow_visual_indexing && 
+                        !($vessel->metadata['is_presence_only'] ?? false);
+
+        if (!$force && $vessel && $vessel->checksum === $checksum && !$needsPromotion && !$needsDemotion) {
             return ['chunks' => 0];
         }
 
-        // 2. Select Processor
-        $processor = $this->getProcessor($extension, $mimeType);
-
-        // Controlled Vision: Skip VisualProcessor if not authorized for this folder
-        if ($processor instanceof VisualProcessor && !$folder->allow_visual_indexing) {
-            Log::debug("Arkhein MediaCore: Skipping VisualProcessor for folder @{$folder->name} (Unauthorized)");
-            $processor = $this->getProcessorByClass(PresenceProcessor::class);
-        }
+        // 2. Select Processor (Now handles Controlled Vision internally)
+        $processor = $this->getProcessor($extension, $mimeType, $folder);
 
         if (!$processor) {
             Log::debug("Arkhein: No processor found for {$relativePath} ({$mimeType})");
@@ -193,31 +207,38 @@ class ArchiveService
             $vessel->update(['summary' => $summary]);
         }
 
-        // 6. Create Fragments
-        $chunks = !empty($result->fragments) ? $result->fragments : $this->splitContent($content);
+        // 6. Create Cognitive Fragments
+        $splitter = $this->splitters[$extension] ?? $this->splitters['default'];
+        $rawChunks = !empty($result->fragments) ? $result->fragments : $splitter->split($content, $this->chunkSize);
+        
         $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
         $chunksCreated = 0;
 
-        foreach ($chunks as $index => $chunk) {
-            $embedding = $this->ollama->embeddings($chunk, $embeddingModel);
+        foreach ($rawChunks as $index => $chunk) {
+            // Anchor the fragment to its parent context for mathematically superior retrieval
+            $fragment = CognitiveFragment::make($chunk, $vessel->summary ?? 'No summary available', $relativePath);
+            
+            // We use the 'vectorAnchor' (enriched text) for the embedding calculation
+            $embedding = $this->ollama->embeddings($fragment->vectorAnchor, $embeddingModel);
             
             if ($embedding) {
                 $this->memory->save(
                     Str::uuid()->toString(),
-                    $chunk,
+                    $fragment->content, // Store the raw content for LLM reading
                     $embedding,
                     $result->type,
                     [
                         'path' => $relativePath,
                         'filename' => $vessel->filename,
                         'chunk_index' => $index,
-                        'total_chunks' => count($chunks),
+                        'total_chunks' => count($rawChunks),
                         'folder_id' => $folder->id,
                         'folder_name' => $folder->name,
                     ],
                     true, // skipIndex: bulk mode
                     $vessel->id,
-                    $mimeType
+                    $mimeType,
+                    $fragment->vectorAnchor
                 );
                 $chunksCreated++;
             }
@@ -234,18 +255,29 @@ class ArchiveService
         return $this->ollama->generate($prompt);
     }
 
-    protected function getProcessor(string $extension, string $mimeType): ?MediaProcessorInterface
+    protected function getProcessor(string $extension, string $mimeType, ManagedFolder $folder): ?MediaProcessorInterface
     {
+        // 1. Specialized Case: Images (Controlled Vision)
+        if (str_starts_with($mimeType, 'image/')) {
+            if ($folder->allow_visual_indexing) {
+                return $this->getProcessorByClass(VisualProcessor::class);
+            }
+            return $this->getProcessorByClass(PresenceProcessor::class);
+        }
+
+        // 2. Normal Processor Detection
         foreach ($this->processors as $processor) {
-            // Skip presence processor during normal detection so it doesn't hijack specific ones
-            if ($processor instanceof PresenceProcessor) continue;
+            // Skip these during normal detection
+            if ($processor instanceof PresenceProcessor || $processor instanceof VisualProcessor) {
+                continue;
+            }
 
             if ($processor->supports($extension, $mimeType)) {
                 return $processor;
             }
         }
         
-        // Fallback to presence
+        // 3. Last Resort: Catch-all Presence
         return $this->getProcessorByClass(PresenceProcessor::class);
     }
 
@@ -257,54 +289,6 @@ class ArchiveService
             }
         }
         return null;
-    }
-
-    protected function splitContent(string $text): array
-    {
-        $separators = ["\n\n", "\n", ". ", " ", ""];
-        return $this->recursiveSplit($text, $separators, $this->chunkSize);
-    }
-
-    protected function recursiveSplit(string $text, array $separators, int $maxSize): array
-    {
-        if (strlen($text) <= $maxSize) {
-            return [$text];
-        }
-
-        $separator = array_shift($separators);
-        if ($separator === null) {
-            return str_split($text, $maxSize);
-        }
-
-        $chunks = [];
-        $parts = explode($separator, $text);
-        $currentChunk = "";
-
-        foreach ($parts as $part) {
-            if (strlen($currentChunk . $separator . $part) <= $maxSize) {
-                $currentChunk .= ($currentChunk ? $separator : "") . $part;
-            } else {
-                if ($currentChunk) {
-                    $chunks[] = $currentChunk;
-                }
-                
-                if (strlen($part) > $maxSize) {
-                    $subChunks = $this->recursiveSplit($part, $separators, $maxSize);
-                    foreach ($subChunks as $sc) {
-                        $chunks[] = $sc;
-                    }
-                    $currentChunk = "";
-                } else {
-                    $currentChunk = $part;
-                }
-            }
-        }
-
-        if ($currentChunk) {
-            $chunks[] = $currentChunk;
-        }
-
-        return $chunks;
     }
 
     protected function sanitizeUtf8(string $text): string

@@ -49,6 +49,11 @@ class OllamaService
         if (isset($options['options'])) {
             $payload['options'] = $options['options'];
         }
+        
+        // Ensure healthy context window for local LLMs
+        if (!isset($payload['options']['num_ctx'])) {
+            $payload['options']['num_ctx'] = 16384;
+        }
 
         $timeout = config('arkhein.protocols.inference_timeout', 300);
         $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
@@ -84,6 +89,10 @@ class OllamaService
         if (isset($options['format'])) $payload['format'] = $options['format'];
         if (isset($options['options'])) $payload['options'] = $options['options'];
 
+        if (!isset($payload['options']['num_ctx'])) {
+            $payload['options']['num_ctx'] = 16384;
+        }
+
         $timeout = config('arkhein.protocols.inference_timeout', 300);
         $response = Http::timeout($timeout)->post("{$this->host}/api/chat", $payload);
 
@@ -118,6 +127,10 @@ class OllamaService
 
         if (isset($options['format'])) $payload['format'] = $options['format'];
         if (isset($options['options'])) $payload['options'] = $options['options'];
+
+        if (!isset($payload['options']['num_ctx'])) {
+            $payload['options']['num_ctx'] = 16384;
+        }
 
         $timeout = config('arkhein.protocols.inference_timeout', 300);
         

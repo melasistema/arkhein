@@ -7,12 +7,17 @@ use Illuminate\Support\Facades\File;
 
 class PresenceProcessor implements MediaProcessorInterface
 {
+    protected array $presenceExtensions = ['svg', 'zip', 'tar', 'gz', 'dmg', 'exe', 'bin', 'raw'];
+
     /**
-     * This is a catch-all processor.
+     * This is a catch-all processor for files we DON'T want to deep-index
+     * but want to acknowledge the presence of.
      */
     public function supports(string $extension, string $mimeType): bool
     {
-        return true;
+        return in_array(strtolower($extension), $this->presenceExtensions) || 
+               empty($mimeType) || 
+               $mimeType === 'application/octet-stream';
     }
 
     public function process(string $path): MediaResult

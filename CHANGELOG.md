@@ -8,12 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Cognitive Fragment Architecture:** Re-architected ingestion to anchor knowledge fragments to their parent document's context, significantly improving SLM accuracy.
+- **Silo Manifest Protocol:** Implemented structural awareness in Vantage Hub, providing assistants with a complete map of all documents and summaries in a silo.
+- **Anchored SSOT:** Added permanent `vector_anchor` persistence in the `knowledge` table, ensuring the SQLite database stores both content and the cognitive intent used for indexing.
+- **Semantic Slicing:** Introduced `MarkdownSplitter` and `StandardSplitter` to respect document boundaries (# Headers, newlines) instead of character counts.
 - **Sovereign Media Core:** Implemented a new extensible `MediaProcessorInterface` and `MediaResult` value object for robust multimodal ingestion.
 - **Visual Intelligence:** Introduced `VisualProcessor` leveraging `OllamaService::generateWithImages` for image-to-text conversion using `qwen3-vl`.
 - **Presence vs. Essence Ingestion:** Added `PresenceProcessor` for fast, searchable metadata-only ingestion of unknown or unauthorized file formats.
 - **Controlled Vision:** Per-folder authorization for visual indexing with dedicated UI toggles in both Settings and Vantage Hub.
 - **Media Promotion Logic:** Automatic "upgrade" of presence-only records to full visual analysis when sight is authorized for a silo.
 - **High-Precision Intent Detection:** Refined the Help Dispatcher with a `PRECISION` intent to identify quantitative queries (totals, lists) and guide users toward deep Vantage analysis.
+- **Reactive System Heartbeat:** Enhanced the global status indicator with red "System Busy" pulsation for high-load states and a detailed interactive dropdown.
+- **Earthbeat Operations Monitor:** Implementation of a real-time task monitor in the heartbeat dropdown showing active/queued indexing tasks and memory sync progress.
+- **Sovereign Task Protocol:** Transitioned folder synchronization to a robust `sync_status` state machine (IDLE, QUEUED, INDEXING).
 - **MIME Type Tracking:** Added `mime_type` columns to `documents` and `knowledge` tables for improved media data tracking.
 - **Vision Model Support:** Integrated `qwen3-vl` vision model across default settings, seeder, and UI.
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
@@ -23,10 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type and implemented throttled progress updates to reduce SQLite lock contention.
 - **Ingestion Robustness:** Increased `IndexFolderJob` timeout to 1 hour and refined ignore logic to only skip junk folders at the silo root.
 - **Lead-by-the-Hand UX:** Enhanced onboarding with strict multi-model verification (LLM, Vision, Embedding) before unlocking system actions.
+- **Vision Authorization UX:** Implemented context-aware confirmation dialogs for visual analysis to manage compute cost expectations.
 
 ### Fixed
+- **Structural Blindness:** Resolved an issue where Vantage assistants missed files that weren't direct vector matches by implementing the Silo Manifest.
 - **Subfolder Indexing:** Resolved an issue where deeply nested files were being over-zealously ignored by the ingestion engine.
+- **Processor Hijacking:** Restricted `PresenceProcessor` to ensure text and PDF files are correctly routed to deep-indexing processors.
 - **Settings Initialization (Vision):** Addressed issues with vision model selections not being correctly initialized in the UI after `migrate:fresh`.
+- **Vision Toggle Safety:** Fixed an issue where vision settings could be toggled while a folder was actively indexing, potentially causing state corruption.
 
 ## [0.0.5] - 2026-04-01
 

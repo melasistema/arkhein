@@ -1,7 +1,27 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database, Eye, EyeOff, ScanEye } from 'lucide-vue-next';
+import {
+    Settings as SettingsIcon,
+    Save,
+    Sparkles,
+    BrainCircuit,
+    Ruler,
+    AlertTriangle,
+    FolderPlus,
+    Trash2,
+    ShieldCheck,
+    RefreshCw,
+    Palette,
+    Lock,
+    Unlock,
+    Info,
+    Zap,
+    Database,
+    Eye,
+    EyeOff,
+    ScanEye,
+} from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
 import Button from '@/components/ui/button/Button.vue';
@@ -63,54 +83,94 @@ const pollInterval = ref<any>(null);
 const clean = (name: string) => name.replace(':latest', '');
 
 // Check if models are present in Ollama's local tags
-const isRecommendedEfficientInstalled = computed(() => props.models.some(m => clean(m.name) === 'mistral'));
-const isRecommendedVisionInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3-vl'));
-const isRecommendedEfficientEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'nomic-embed-text'));
+const isRecommendedEfficientInstalled = computed(() =>
+    props.models.some((m) => clean(m.name) === 'mistral'),
+);
+const isRecommendedVisionInstalled = computed(() =>
+    props.models.some((m) => clean(m.name) === 'qwen3-vl'),
+);
+const isRecommendedEfficientEmbeddingInstalled = computed(() =>
+    props.models.some((m) => clean(m.name) === 'nomic-embed-text'),
+);
 
-const isRecommendedEliteInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3:8b'));
-const isRecommendedEliteEmbeddingInstalled = computed(() => props.models.some(m => clean(m.name) === 'qwen3-embedding:4b'));
+const isRecommendedEliteInstalled = computed(() =>
+    props.models.some((m) => clean(m.name) === 'qwen3:8b'),
+);
+const isRecommendedEliteEmbeddingInstalled = computed(() =>
+    props.models.some((m) => clean(m.name) === 'qwen3-embedding:4b'),
+);
 
 const showOnboardingWarning = computed(() => {
-    return !isRecommendedEfficientInstalled.value || !isRecommendedVisionInstalled.value || !isRecommendedEfficientEmbeddingInstalled.value;
+    return (
+        !isRecommendedEfficientInstalled.value ||
+        !isRecommendedVisionInstalled.value ||
+        !isRecommendedEfficientEmbeddingInstalled.value
+    );
 });
 
 const isSetupComplete = computed(() => {
     if (!props.is_ollama_online) return false;
 
-    const installed = props.models.map(m => clean(m.name));
-    return installed.includes(clean(form.llm_model)) &&
-           installed.includes(clean(form.vision_model)) &&
-           installed.includes(clean(form.embedding_model));
+    const installed = props.models.map((m) => clean(m.name));
+    return (
+        installed.includes(clean(form.llm_model)) &&
+        installed.includes(clean(form.vision_model)) &&
+        installed.includes(clean(form.embedding_model))
+    );
 });
 
 // Check if ANY folder is currently indexing
 const isAnyFolderIndexing = computed(() => {
-    return foldersList.value.some(f => f.is_indexing);
+    return foldersList.value.some((f) => f.is_indexing);
 });
 
 // The master busy state
-const isBusy = computed(() => syncing.value || isAnyFolderIndexing.value || isRebuilding.value || !isSetupComplete.value);
+const isBusy = computed(
+    () =>
+        syncing.value ||
+        isAnyFolderIndexing.value ||
+        isRebuilding.value ||
+        !isSetupComplete.value,
+);
 
 const toggleLock = () => {
     if (!isSettingsLocked.value) {
         isSettingsLocked.value = true;
     } else {
-        if (confirm("Advanced: Changing these settings can clear Arkhein's long-term memory. Continue?")) {
+        if (
+            confirm(
+                "Advanced: Changing these settings can clear Arkhein's long-term memory. Continue?",
+            )
+        ) {
             isSettingsLocked.value = false;
         }
     }
 };
 
+const findBestMatch = (baseName: string) => {
+    const installed = props.models.map(m => m.name);
+    // Priority 1: Exact match
+    if (installed.includes(baseName)) return baseName;
+    // Priority 2: :latest variant
+    if (installed.includes(`${baseName}:latest`)) return `${baseName}:latest`;
+    // Priority 3: Base variant (if :latest was requested but only base exists)
+    const base = baseName.replace(':latest', '');
+    if (installed.includes(base)) return base;
+    
+    // Fallback to the target literal so the UI has a value
+    return baseName;
+};
+
 const setComputeProfile = (profile: 'efficient' | 'elite') => {
     if (profile === 'efficient') {
-        form.llm_model = 'mistral:latest';
-        form.vision_model = 'qwen3-vl:latest';
-        form.embedding_model = 'nomic-embed-text:latest';
+        form.llm_model = findBestMatch('mistral:latest');
+        form.vision_model = findBestMatch('qwen3-vl:latest');
+        form.embedding_model = findBestMatch('nomic-embed-text:latest');
         form.embedding_dimensions = 768;
     } else {
-        form.llm_model = 'qwen3:8b:latest';
-        form.vision_model = 'qwen3-vl:latest';
-        form.embedding_model = 'qwen3-embedding:4b:latest';
+        form.llm_model = findBestMatch('qwen3:8b:latest');
+        form.vision_model = findBestMatch('qwen3-vl:latest');
+        form.embedding_model = findBestMatch('qwen3-embedding:4b:latest');
         form.embedding_dimensions = 1056;
     }
     isSettingsLocked.value = false;
@@ -126,7 +186,7 @@ const rebuildIndex = async () => {
         await axios.post('/settings/rebuild');
         startPolling();
     } catch (e) {
-        console.error("Rebuild failed", e);
+        console.error('Rebuild failed', e);
         isRebuilding.value = false;
     }
 };
@@ -145,7 +205,7 @@ const pollStatus = async () => {
             stopPolling();
         }
     } catch (e) {
-        console.error("Polling failed", e);
+        console.error('Polling failed', e);
         stopPolling();
     }
 };
@@ -180,8 +240,11 @@ const form = useForm({
 });
 
 const isMemoryResetRequired = computed(() => {
-    return form.embedding_model !== props.current.embedding_model ||
-           Number(form.embedding_dimensions) !== Number(props.current.embedding_dimensions);
+    return (
+        form.embedding_model !== props.current.embedding_model ||
+        Number(form.embedding_dimensions) !==
+            Number(props.current.embedding_dimensions)
+    );
 });
 
 const submit = () => {
@@ -205,7 +268,7 @@ const syncFolders = () => {
         },
         onFinish: () => {
             syncing.value = false;
-        }
+        },
     });
 };
 
@@ -213,8 +276,10 @@ const addFolder = () => {
     useForm({}).post('/settings/folders', {
         preserveScroll: true,
         onFinish: () => {
-            axios.get('/settings').then(res => foldersList.value = res.data.folders);
-        }
+            axios
+                .get('/settings')
+                .then((res) => (foldersList.value = res.data.folders));
+        },
     });
 };
 
@@ -224,21 +289,21 @@ const removeFolder = (id: number) => {
     useForm({}).delete(`/settings/folders/${id}`, {
         preserveScroll: true,
         onFinish: () => {
-            foldersList.value = foldersList.value.filter(f => f.id !== id);
-        }
+            foldersList.value = foldersList.value.filter((f) => f.id !== id);
+        },
     });
 };
 
 const toggleVisual = (id: number) => {
     if (isBusy.value) return;
 
-    const folder = foldersList.value.find(f => f.id === id);
+    const folder = foldersList.value.find((f) => f.id === id);
     if (!folder) return;
 
     const isAlreadyEnabled = folder.allow_visual_indexing;
-    const message = isAlreadyEnabled 
-        ? "Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)"
-        : "Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes. Continue?";
+    const message = isAlreadyEnabled
+        ? 'Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)'
+        : 'Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes. Continue?';
 
     if (!confirm(message)) return;
 
@@ -249,7 +314,7 @@ const toggleVisual = (id: number) => {
                 folder.allow_visual_indexing = true;
             }
             startPolling(); // Show indexing progress
-        }
+        },
     });
 };
 </script>
@@ -258,20 +323,25 @@ const toggleVisual = (id: number) => {
     <Head title="Settings" />
 
     <AppLayout :breadcrumbs="breadcrumbs">
-        <div class="flex h-full flex-1 flex-col gap-8 p-8 overflow-y-auto max-w-6xl mx-auto w-full">
-
+        <div
+            class="mx-auto flex h-full w-full max-w-6xl flex-1 flex-col gap-8 overflow-y-auto p-8"
+        >
             <div class="flex items-center gap-3">
-                <div class="p-2 rounded-xl bg-primary/10 text-primary">
+                <div class="rounded-xl bg-primary/10 p-2 text-primary">
                     <SettingsIcon class="h-6 w-6" />
                 </div>
                 <div>
-                    <h1 class="text-3xl font-bold tracking-tight">System Settings</h1>
-                    <p class="text-sm text-muted-foreground">Configure Arkhein's intelligence, memory, and appearance.</p>
+                    <h1 class="text-3xl font-bold tracking-tight">
+                        System Settings
+                    </h1>
+                    <p class="text-sm text-muted-foreground">
+                        Configure Arkhein's intelligence, memory, and
+                        appearance.
+                    </p>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-
+            <div class="grid grid-cols-1 items-start gap-8 lg:grid-cols-2">
                 <!-- Left Column: Core Intelligence -->
                 <div class="flex flex-col gap-8">
                     <Card>
@@ -281,76 +351,154 @@ const toggleVisual = (id: number) => {
                                     <Sparkles class="h-5 w-5 text-yellow-500" />
                                     AI Models
                                 </CardTitle>
-                                <div v-if="is_optimized" class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-green-500/10 text-[10px] text-green-600 font-black uppercase tracking-tighter border border-green-500/20">
+                                <div
+                                    v-if="is_optimized"
+                                    class="flex items-center gap-1.5 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-1 text-[10px] font-black tracking-tighter text-green-600 uppercase"
+                                >
                                     <Zap class="h-2.5 w-2.5 fill-current" />
                                     Optimized for Arkhein
                                 </div>
-                                <div v-else class="flex items-center gap-1.5 px-2 py-1 rounded-full bg-muted text-[10px] text-muted-foreground font-black uppercase tracking-tighter border border-border">
+                                <div
+                                    v-else
+                                    class="flex items-center gap-1.5 rounded-full border border-border bg-muted px-2 py-1 text-[10px] font-black tracking-tighter text-muted-foreground uppercase"
+                                >
                                     Custom Config
                                 </div>
                             </div>
                             <CardDescription>
-                                Configure which local Ollama models Arkhein uses for conversation and memory.
+                                Configure which local Ollama models Arkhein uses
+                                for conversation and memory.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
                             <!-- 0. Compute Profile Selection -->
-                            <div v-if="is_ollama_online" class="mb-6 grid grid-cols-2 gap-3">
+                            <div
+                                v-if="is_ollama_online"
+                                class="mb-6 grid grid-cols-2 gap-3"
+                            >
                                 <button
                                     type="button"
                                     @click="setComputeProfile('efficient')"
-                                    class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="clean(form.llm_model) === 'mistral' ? 'bg-primary/5 border-primary shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    class="flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all"
+                                    :class="
+                                        clean(form.llm_model) === 'mistral'
+                                            ? 'border-primary bg-primary/5 shadow-sm'
+                                            : 'border-border/50 bg-muted/30 opacity-60 hover:opacity-100'
+                                    "
                                 >
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-[10px] font-black uppercase tracking-widest text-primary">Efficient</span>
-                                        <Zap v-if="clean(form.llm_model) === 'mistral'" class="h-3 w-3 text-primary fill-current" />
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <span
+                                            class="text-[10px] font-black tracking-widest text-primary uppercase"
+                                            >Efficient</span
+                                        >
+                                        <Zap
+                                            v-if="
+                                                clean(form.llm_model) ===
+                                                'mistral'
+                                            "
+                                            class="h-3 w-3 fill-current text-primary"
+                                        />
                                     </div>
-                                    <span class="text-xs font-bold">Mistral + Nomic</span>
-                                    <span class="text-[9px] leading-tight text-muted-foreground">Standard Mac (8GB-16GB RAM). Balanced speed and accuracy.</span>
+                                    <span class="text-xs font-bold"
+                                        >Mistral + Nomic</span
+                                    >
+                                    <span
+                                        class="text-[9px] leading-tight text-muted-foreground"
+                                        >Standard Mac (8GB-16GB RAM). Balanced
+                                        speed and accuracy.</span
+                                    >
                                 </button>
 
                                 <button
                                     type="button"
                                     @click="setComputeProfile('elite')"
-                                    class="flex flex-col gap-2 p-4 rounded-2xl border transition-all text-left"
-                                    :class="clean(form.llm_model) === 'qwen3:8b' ? 'bg-indigo-500/5 border-indigo-500 shadow-sm' : 'bg-muted/30 border-border/50 opacity-60 hover:opacity-100'"
+                                    class="flex flex-col gap-2 rounded-2xl border p-4 text-left transition-all"
+                                    :class="
+                                        clean(form.llm_model) === 'qwen3:8b'
+                                            ? 'border-indigo-500 bg-indigo-500/5 shadow-sm'
+                                            : 'border-border/50 bg-muted/30 opacity-60 hover:opacity-100'
+                                    "
                                 >
-                                    <div class="flex items-center justify-between">
-                                        <span class="text-[10px] font-black uppercase tracking-widest text-indigo-500">Elite</span>
-                                        <Sparkles v-if="clean(form.llm_model) === 'qwen3:8b'" class="h-3 w-3 text-indigo-500 fill-current" />
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <span
+                                            class="text-[10px] font-black tracking-widest text-indigo-500 uppercase"
+                                            >Elite</span
+                                        >
+                                        <Sparkles
+                                            v-if="
+                                                clean(form.llm_model) ===
+                                                'qwen3:8b'
+                                            "
+                                            class="h-3 w-3 fill-current text-indigo-500"
+                                        />
                                     </div>
-                                    <span class="text-xs font-bold">Qwen3 Suite</span>
-                                    <span class="text-[9px] leading-tight text-muted-foreground">Pro/Max Specs (32GB+ RAM). Superior analytical reasoning.</span>
+                                    <span class="text-xs font-bold"
+                                        >Qwen3 Suite</span
+                                    >
+                                    <span
+                                        class="text-[9px] leading-tight text-muted-foreground"
+                                        >Pro/Max Specs (32GB+ RAM). Superior
+                                        analytical reasoning.</span
+                                    >
                                 </button>
                             </div>
 
                             <!-- 1. Ollama Offline State -->
-                            <div v-if="!is_ollama_online" class="p-6 rounded-[2rem] bg-red-500/5 border border-red-500/20 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
-                                <div class="p-4 rounded-3xl bg-red-500/10 text-red-500 shadow-inner">
+                            <div
+                                v-if="!is_ollama_online"
+                                class="flex animate-in flex-col items-center gap-6 rounded-[2rem] border border-red-500/20 bg-red-500/5 p-6 text-center duration-500 zoom-in-95 fade-in"
+                            >
+                                <div
+                                    class="rounded-3xl bg-red-500/10 p-4 text-red-500 shadow-inner"
+                                >
                                     <AlertTriangle class="h-8 w-8" />
                                 </div>
                                 <div class="space-y-2">
-                                    <h3 class="text-lg font-black uppercase tracking-tighter text-red-600">Inference Engine Offline</h3>
-                                    <p class="text-xs text-muted-foreground leading-relaxed max-w-sm">
-                                        Arkhein cannot connect to **Ollama** on `localhost:11434`. This is required for all local intelligence and memory operations.
+                                    <h3
+                                        class="text-lg font-black tracking-tighter text-red-600 uppercase"
+                                    >
+                                        Inference Engine Offline
+                                    </h3>
+                                    <p
+                                        class="max-w-sm text-xs leading-relaxed text-muted-foreground"
+                                    >
+                                        Arkhein cannot connect to **Ollama** on
+                                        `localhost:11434`. This is required for
+                                        all local intelligence and memory
+                                        operations.
                                     </p>
                                 </div>
 
-                                <div class="grid grid-cols-1 gap-3 w-full">
-                                    <a href="https://ollama.com/download" target="_blank" class="w-full">
-                                        <Button variant="outline" class="w-full h-11 rounded-2xl border-red-500/20 hover:bg-red-500/10 text-red-600 font-bold gap-2">
+                                <div class="grid w-full grid-cols-1 gap-3">
+                                    <a
+                                        href="https://ollama.com/download"
+                                        target="_blank"
+                                        class="w-full"
+                                    >
+                                        <Button
+                                            variant="outline"
+                                            class="h-11 w-full gap-2 rounded-2xl border-red-500/20 font-bold text-red-600 hover:bg-red-500/10"
+                                        >
                                             <Database class="h-4 w-4" />
                                             Download Ollama for macOS
                                         </Button>
                                     </a>
-                                    <Button @click="() => $inertia.reload()" class="w-full h-11 rounded-2xl gap-2 font-bold shadow-lg shadow-primary/20">
+                                    <Button
+                                        @click="() => $inertia.reload()"
+                                        class="h-11 w-full gap-2 rounded-2xl font-bold shadow-lg shadow-primary/20"
+                                    >
                                         <RefreshCw class="h-4 w-4" />
                                         Retry Connection
                                     </Button>
                                 </div>
 
-                                <p class="text-[10px] opacity-40 uppercase tracking-widest font-black">
+                                <p
+                                    class="text-[10px] font-black tracking-widest uppercase opacity-40"
+                                >
                                     Sovereign Architecture • Zero-Cloud Policy
                                 </p>
                             </div>
@@ -358,250 +506,378 @@ const toggleVisual = (id: number) => {
                             <!-- 2. Normal Onboarding / Configuration UI -->
                             <template v-else>
                                 <!-- Incomplete Setup Warning -->
-                                <div v-if="showOnboardingWarning" class="mb-6 p-6 rounded-[2.5rem] bg-amber-500/5 border border-amber-500/20 flex flex-col items-center text-center gap-6 animate-in fade-in zoom-in-95 duration-500">
-                                    <div class="p-4 rounded-3xl bg-amber-500/10 text-amber-600 shadow-inner">
+                                <div
+                                    v-if="showOnboardingWarning"
+                                    class="mb-6 flex animate-in flex-col items-center gap-6 rounded-[2.5rem] border border-amber-500/20 bg-amber-500/5 p-6 text-center duration-500 zoom-in-95 fade-in"
+                                >
+                                    <div
+                                        class="rounded-3xl bg-amber-500/10 p-4 text-amber-600 shadow-inner"
+                                    >
                                         <Lock class="h-8 w-8" />
                                     </div>
                                     <div class="space-y-2">
-                                        <h3 class="text-lg font-black uppercase tracking-tighter text-amber-600">Action Required: Memory Setup</h3>
-                                        <p class="text-xs text-muted-foreground leading-relaxed max-w-sm">
-                                            Indexing and folder authorization are **disabled** until the recommended models are downloaded to your machine.
+                                        <h3
+                                            class="text-lg font-black tracking-tighter text-amber-600 uppercase"
+                                        >
+                                            Action Required: Memory Setup
+                                        </h3>
+                                        <p
+                                            class="max-w-sm text-xs leading-relaxed text-muted-foreground"
+                                        >
+                                            Indexing and folder authorization
+                                            are **disabled** until the
+                                            recommended models are downloaded to
+                                            your machine.
                                         </p>
                                     </div>
 
-                                    <div class="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 font-mono text-[9px] text-amber-700 w-full space-y-2 text-left">
-                                        <div class="flex items-center justify-between">
-                                            <span>ollama pull mistral:latest</span>
-                                            <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-3 w-3" />
+                                    <div
+                                        class="w-full space-y-2 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-left font-mono text-[9px] text-amber-700"
+                                    >
+                                        <div
+                                            class="flex items-center justify-between"
+                                        >
+                                            <span
+                                                >ollama pull
+                                                mistral:latest</span
+                                            >
+                                            <ShieldCheck
+                                                v-if="
+                                                    isRecommendedEfficientInstalled
+                                                "
+                                                class="h-3 w-3"
+                                            />
                                         </div>
-                                        <div class="flex items-center justify-between">
-                                            <span>ollama pull qwen3-vl:latest</span>
-                                            <ShieldCheck v-if="isRecommendedVisionInstalled" class="h-3 w-3" />
+                                        <div
+                                            class="flex items-center justify-between"
+                                        >
+                                            <span
+                                                >ollama pull
+                                                qwen3-vl:latest</span
+                                            >
+                                            <ShieldCheck
+                                                v-if="
+                                                    isRecommendedVisionInstalled
+                                                "
+                                                class="h-3 w-3"
+                                            />
                                         </div>
-                                        <div class="flex items-center justify-between">
-                                            <span>ollama pull nomic-embed-text:latest</span>
-                                            <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-3 w-3" />
+                                        <div
+                                            class="flex items-center justify-between"
+                                        >
+                                            <span
+                                                >ollama pull
+                                                nomic-embed-text:latest</span
+                                            >
+                                            <ShieldCheck
+                                                v-if="
+                                                    isRecommendedEfficientEmbeddingInstalled
+                                                "
+                                                class="h-3 w-3"
+                                            />
                                         </div>
                                     </div>
 
-                                    <p class="text-[10px] opacity-60 uppercase tracking-widest font-black text-amber-600 animate-pulse">
+                                    <p
+                                        class="animate-pulse text-[10px] font-black tracking-widest text-amber-600 uppercase opacity-60"
+                                    >
                                         System Locked • Pull Models to Continue
                                     </p>
                                 </div>
 
                                 <!-- Compute Profile Guide -->
-                                <div class="mb-6 p-4 rounded-2xl bg-primary/5 border border-primary/10 flex flex-col gap-4">
-                                    <div class="flex items-center gap-2 text-primary">
+                                <div
+                                    class="mb-6 flex flex-col gap-4 rounded-2xl border border-primary/10 bg-primary/5 p-4"
+                                >
+                                    <div
+                                        class="flex items-center gap-2 text-primary"
+                                    >
                                         <Database class="h-4 w-4" />
-                                        <span class="text-xs font-bold uppercase tracking-wider">Ollama Model Guide</span>
+                                        <span
+                                            class="text-xs font-bold tracking-wider uppercase"
+                                            >Ollama Model Guide</span
+                                        >
                                     </div>
                                     <div class="grid grid-cols-1 gap-6">
                                         <div class="space-y-2">
-                                            <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Efficient (Standard)</span>
-                                            <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
-                                                <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull mistral:latest</span>
-                                                    <ShieldCheck v-if="isRecommendedEfficientInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                            <span
+                                                class="text-[9px] font-black tracking-widest uppercase opacity-50"
+                                                >Efficient (Standard)</span
+                                            >
+                                            <div
+                                                class="space-y-1 rounded-xl border border-border/50 bg-background p-2.5 font-mono text-[9px]"
+                                            >
+                                                <div
+                                                    class="flex justify-between"
+                                                >
+                                                    <span class="opacity-70"
+                                                        >ollama pull
+                                                        mistral:latest</span
+                                                    >
+                                                    <ShieldCheck
+                                                        v-if="
+                                                            isRecommendedEfficientInstalled
+                                                        "
+                                                        class="h-2.5 w-2.5 text-green-500"
+                                                    />
                                                 </div>
-                                                <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull qwen3-vl:latest</span>
-                                                    <ShieldCheck v-if="isRecommendedVisionInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                <div
+                                                    class="flex justify-between"
+                                                >
+                                                    <span class="opacity-70"
+                                                        >ollama pull
+                                                        qwen3-vl:latest</span
+                                                    >
+                                                    <ShieldCheck
+                                                        v-if="
+                                                            isRecommendedVisionInstalled
+                                                        "
+                                                        class="h-2.5 w-2.5 text-green-500"
+                                                    />
                                                 </div>
-                                                <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull nomic-embed-text:latest</span>
-                                                    <ShieldCheck v-if="isRecommendedEfficientEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                <div
+                                                    class="flex justify-between"
+                                                >
+                                                    <span class="opacity-70"
+                                                        >ollama pull
+                                                        nomic-embed-text:latest</span
+                                                    >
+                                                    <ShieldCheck
+                                                        v-if="
+                                                            isRecommendedEfficientEmbeddingInstalled
+                                                        "
+                                                        class="h-2.5 w-2.5 text-green-500"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
                                         <div class="space-y-2">
-                                            <span class="text-[9px] font-black uppercase tracking-widest opacity-50">Elite (High-Precision)</span>
-                                            <div class="p-2.5 rounded-xl bg-background border border-border/50 font-mono text-[9px] space-y-1">
-                                                <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull qwen3:8b:latest</span>
-                                                    <ShieldCheck v-if="isRecommendedEliteInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                            <span
+                                                class="text-[9px] font-black tracking-widest uppercase opacity-50"
+                                                >Elite (High-Precision)</span
+                                            >
+                                            <div
+                                                class="space-y-1 rounded-xl border border-border/50 bg-background p-2.5 font-mono text-[9px]"
+                                            >
+                                                <div
+                                                    class="flex justify-between"
+                                                >
+                                                    <span class="opacity-70"
+                                                        >ollama pull
+                                                        qwen3:8b:latest</span
+                                                    >
+                                                    <ShieldCheck
+                                                        v-if="
+                                                            isRecommendedEliteInstalled
+                                                        "
+                                                        class="h-2.5 w-2.5 text-green-500"
+                                                    />
                                                 </div>
-                                                <div class="flex justify-between">
-                                                    <span class="opacity-70">ollama pull qwen3-embedding:4b:latest</span>
-                                                    <ShieldCheck v-if="isRecommendedEliteEmbeddingInstalled" class="h-2.5 w-2.5 text-green-500" />
+                                                <div
+                                                    class="flex justify-between"
+                                                >
+                                                    <span class="opacity-70"
+                                                        >ollama pull
+                                                        qwen3-embedding:4b:latest</span
+                                                    >
+                                                    <ShieldCheck
+                                                        v-if="
+                                                            isRecommendedEliteEmbeddingInstalled
+                                                        "
+                                                        class="h-2.5 w-2.5 text-green-500"
+                                                    />
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <form @submit.prevent="submit" class="space-y-6">
-
-                                <div v-if="isMemoryResetRequired && !isSettingsLocked" class="rounded-2xl bg-amber-500/5 p-4 border border-amber-500/20">
-                                    <div class="flex gap-3">
-                                        <AlertTriangle class="h-5 w-5 text-amber-500 shrink-0" />
-                                        <div class="space-y-1">
-                                            <h3 class="text-xs font-bold text-amber-600 uppercase">Memory Reset Required</h3>
-                                            <p class="text-[11px] text-muted-foreground leading-relaxed">Changing these settings will clear your current vector index to prevent dimension mismatch.</p>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-4" :class="{ 'opacity-50 pointer-events-none select-none': isSettingsLocked }">
-                                    <div class="space-y-2">
-                                        <Label for="llm_model">Primary Assistant Model (LLM)</Label>
-                                        <Select v-model="form.llm_model">
-                                            <SelectTrigger class="rounded-xl">
-                                                <SelectValue placeholder="Select a model" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
-                                                    {{ model.name }}
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div class="space-y-2">
-                                        <Label for="vision_model">Vision Assistant Model (Multimodal)</Label>
-                                        <Select v-model="form.vision_model">
-                                            <SelectTrigger class="rounded-xl">
-                                                <SelectValue placeholder="Select a model" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
-                                                    {{ model.name }}
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div class="space-y-2">
-                                        <Label for="embedding_model">Embedding Model</Label>
-                                        <Select v-model="form.embedding_model">
-                                            <SelectTrigger class="rounded-xl">
-                                                <SelectValue placeholder="Select a model" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
-                                                    {{ model.name }}
-                                                </SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    </div>
-
-                                    <div class="space-y-2">
-                                        <Label for="embedding_dimensions" class="flex items-center gap-2">
-                                            <Ruler class="h-4 w-4" />
-                                            Embedding Dimensions
-                                        </Label>
-                                        <Input
-                                            id="embedding_dimensions"
-                                            type="number"
-                                            v-model="form.embedding_dimensions"
-                                            class="rounded-xl"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div class="pt-4 flex items-center justify-between gap-4">
-                                    <div class="flex gap-2">
-                                        <Button type="button" variant="outline" size="sm" class="rounded-xl px-4 h-9" @click="toggleLock">
-                                            <component :is="isSettingsLocked ? Lock : Unlock" class="mr-2 h-3.5 w-3.5" />
-                                            {{ isSettingsLocked ? 'Unlock Settings' : 'Lock for Safety' }}
-                                        </Button>
-                                    </div>
-
-                                    <div v-if="!isSettingsLocked" class="flex items-center gap-3">
-                                        <div v-if="form.recentlySuccessful" class="text-[10px] text-green-600 font-bold uppercase animate-in fade-in">
-                                            Saved!
-                                        </div>
-                                        <Button type="submit" class="rounded-xl px-6 h-9" :disabled="form.processing">
-                                            <Save class="mr-2 h-3.5 w-3.5" />
-                                            Save Changes
-                                        </Button>
-                                    </div>
-                                </div>
-                            </form>
-                            </template>
-                        </CardContent>
-                    </Card>
-
-                    <Card>
-                        <CardHeader>
-                            <CardTitle class="flex items-center gap-2 text-blue-600">
-                                <BrainCircuit class="h-5 w-5" />
-                                Memory Architecture
-                            </CardTitle>
-                            <CardDescription>
-                                Arkhein uses a dual-layer memory system for sovereignty and speed.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                            <div class="space-y-6">
-                                <!-- Progress Bar for Reconciliation -->
-                                <div v-if="isRebuilding" class="space-y-3 p-4 rounded-2xl bg-blue-500/5 border border-blue-500/20">
-                                    <div class="flex items-center justify-between text-[10px] uppercase tracking-widest font-black text-blue-600">
-                                        <span>System Reconciliation in Progress</span>
-                                        <span>{{ reconcileProgress }}%</span>
-                                    </div>
-                                    <div class="h-2 w-full bg-blue-500/10 rounded-full overflow-hidden">
-                                        <div
-                                            class="h-full bg-blue-500 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(59,130,246,0.5)]"
-                                            :style="{ width: reconcileProgress + '%' }"
-                                        ></div>
-                                    </div>
-                                    <p class="text-[9px] text-muted-foreground italic">Batched shadow rebuild: Preparing fresh high-speed binary indices without downtime.</p>
-                                </div>
-
-                                <!-- SQLite Layer (SSOT) -->
-                                <div class="p-4 rounded-2xl bg-muted/40 border border-border/50 flex flex-col gap-3">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center gap-2">
-                                            <div class="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
-                                                <Database class="h-4 w-4" />
-                                            </div>
-                                            <span class="text-xs font-bold uppercase tracking-wider">Primary SSOT</span>
-                                        </div>
-                                        <span class="text-[10px] font-mono bg-blue-500/10 text-blue-600 px-2 py-0.5 rounded-full">SQLite</span>
-                                    </div>
-                                    <div class="flex flex-col gap-1">
-                                        <span class="text-[10px] text-muted-foreground leading-relaxed">
-                                            The Single Source of Truth where all embeddings, text, and metadata are persisted.
-                                        </span>
-                                        <span class="text-[9px] font-mono text-muted-foreground truncate opacity-60">database: nativephp.sqlite</span>
-                                    </div>
-                                </div>
-
-                                <!-- Vektor Layer (Accelerator) -->
-                                <div class="p-4 rounded-2xl bg-muted/40 border border-border/50 flex flex-col gap-3">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center gap-2">
-                                            <div class="p-1.5 rounded-lg bg-orange-500/10 text-orange-600 dark:text-orange-400">
-                                                <RefreshCw class="h-4 w-4" />
-                                            </div>
-                                            <span class="text-xs font-bold uppercase tracking-wider">Vektor Accelerator</span>
-                                        </div>
-                                        <span class="text-[10px] font-mono bg-orange-500/10 text-orange-600 px-2 py-0.5 rounded-full">Binary Index</span>
-                                    </div>
-                                    <div class="flex flex-col gap-1">
-                                        <span class="text-[10px] text-muted-foreground leading-relaxed">
-                                            A high-speed binary index rebuilt automatically from the SSOT if corrupted or missing.
-                                        </span>
-                                        <span class="text-[9px] font-mono text-muted-foreground truncate opacity-60">path: storage/app/vektor/vector.bin</span>
-                                    </div>
-                                </div>
-
-                                <div class="pt-2">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        class="w-full rounded-xl text-xs h-9 border-dashed"
-                                        @click="rebuildIndex"
-                                        :disabled="isBusy"
+                                <form
+                                    @submit.prevent="submit"
+                                    class="space-y-6"
+                                >
+                                    <div
+                                        v-if="
+                                            isMemoryResetRequired &&
+                                            !isSettingsLocked
+                                        "
+                                        class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4"
                                     >
-                                        <RefreshCw class="mr-2 h-3 w-3" :class="{ 'animate-spin': isRebuilding }" />
-                                        {{ isRebuilding ? 'Reconciling...' : 'Force Index Reconciliation' }}
-                                    </Button>
-                                    <p class="text-[9px] text-muted-foreground text-center mt-3 px-4 italic">
-                                        Reconciles the binary accelerator with the SQLite Source of Truth.
-                                    </p>
-                                </div>
-                            </div>
+                                        <div class="flex gap-3">
+                                            <AlertTriangle
+                                                class="h-5 w-5 shrink-0 text-amber-500"
+                                            />
+                                            <div class="space-y-1">
+                                                <h3
+                                                    class="text-xs font-bold text-amber-600 uppercase"
+                                                >
+                                                    Memory Reset Required
+                                                </h3>
+                                                <p
+                                                    class="text-[11px] leading-relaxed text-muted-foreground"
+                                                >
+                                                    Changing these settings will
+                                                    clear your current vector
+                                                    index to prevent dimension
+                                                    mismatch.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="space-y-4"
+                                        :class="{
+                                            'pointer-events-none opacity-50 select-none':
+                                                isSettingsLocked,
+                                        }"
+                                    >
+                                        <div class="space-y-2">
+                                            <Label for="llm_model"
+                                                >Primary Assistant Model
+                                                (LLM)</Label
+                                            >
+                                            <Select v-model="form.llm_model">
+                                                <SelectTrigger
+                                                    class="rounded-xl"
+                                                >
+                                                    <SelectValue
+                                                        placeholder="Select a model"
+                                                    />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        v-for="model in models"
+                                                        :key="model.name"
+                                                        :value="model.name"
+                                                    >
+                                                        {{ model.name }}
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <Label for="vision_model"
+                                                >Vision Assistant Model
+                                                (Multimodal)</Label
+                                            >
+                                            <Select v-model="form.vision_model">
+                                                <SelectTrigger
+                                                    class="rounded-xl"
+                                                >
+                                                    <SelectValue
+                                                        placeholder="Select a model"
+                                                    />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        v-for="model in models"
+                                                        :key="model.name"
+                                                        :value="model.name"
+                                                    >
+                                                        {{ model.name }}
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <Label for="embedding_model"
+                                                >Embedding Model</Label
+                                            >
+                                            <Select
+                                                v-model="form.embedding_model"
+                                            >
+                                                <SelectTrigger
+                                                    class="rounded-xl"
+                                                >
+                                                    <SelectValue
+                                                        placeholder="Select a model"
+                                                    />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem
+                                                        v-for="model in models"
+                                                        :key="model.name"
+                                                        :value="model.name"
+                                                    >
+                                                        {{ model.name }}
+                                                    </SelectItem>
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            <Label
+                                                for="embedding_dimensions"
+                                                class="flex items-center gap-2"
+                                            >
+                                                <Ruler class="h-4 w-4" />
+                                                Embedding Dimensions
+                                            </Label>
+                                            <Input
+                                                id="embedding_dimensions"
+                                                type="number"
+                                                v-model="
+                                                    form.embedding_dimensions
+                                                "
+                                                class="rounded-xl"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div
+                                        class="flex items-center justify-between gap-4 pt-4"
+                                    >
+                                        <div class="flex gap-2">
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                class="h-9 rounded-xl px-4"
+                                                @click="toggleLock"
+                                            >
+                                                <component
+                                                    :is="
+                                                        isSettingsLocked
+                                                            ? Lock
+                                                            : Unlock
+                                                    "
+                                                    class="mr-2 h-3.5 w-3.5"
+                                                />
+                                                {{
+                                                    isSettingsLocked
+                                                        ? 'Unlock Settings'
+                                                        : 'Lock for Safety'
+                                                }}
+                                            </Button>
+                                        </div>
+
+                                        <div
+                                            v-if="!isSettingsLocked"
+                                            class="flex items-center gap-3"
+                                        >
+                                            <div
+                                                v-if="form.recentlySuccessful"
+                                                class="animate-in text-[10px] font-bold text-green-600 uppercase fade-in"
+                                            >
+                                                Saved!
+                                            </div>
+                                            <Button
+                                                type="submit"
+                                                class="h-9 rounded-xl px-6"
+                                                :disabled="form.processing"
+                                            >
+                                                <Save
+                                                    class="mr-2 h-3.5 w-3.5"
+                                                />
+                                                Save Changes
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </template>
                         </CardContent>
                     </Card>
                 </div>
@@ -615,7 +891,8 @@ const toggleVisual = (id: number) => {
                                 Appearance
                             </CardTitle>
                             <CardDescription>
-                                Choose your preferred theme for the Arkhein interface.
+                                Choose your preferred theme for the Arkhein
+                                interface.
                             </CardDescription>
                         </CardHeader>
                         <CardContent>
@@ -625,43 +902,95 @@ const toggleVisual = (id: number) => {
 
                     <Card>
                         <CardHeader>
-                            <CardTitle class="flex items-center gap-2 text-green-600">
+                            <CardTitle
+                                class="flex items-center gap-2 text-green-600"
+                            >
                                 <ShieldCheck class="h-5 w-5" />
                                 Permissions & Managed Folders
                             </CardTitle>
                             <CardDescription>
-                                Arkhein only indexes files in folders you explicitly authorize here.
+                                Arkhein only indexes files in folders you
+                                explicitly authorize here.
                             </CardDescription>
                         </CardHeader>
                         <CardContent class="space-y-4">
-                            <div v-if="foldersList.length === 0" class="text-sm text-muted-foreground italic py-8 text-center border-2 border-dashed rounded-[1.5rem] bg-muted/20">
-                                No folders authorized. Add one to begin indexing your local archive.
+                            <div
+                                v-if="foldersList.length === 0"
+                                class="rounded-[1.5rem] border-2 border-dashed bg-muted/20 py-8 text-center text-sm text-muted-foreground italic"
+                            >
+                                No folders authorized. Add one to begin indexing
+                                your local archive.
                             </div>
                             <div v-else class="space-y-3">
-                                <div v-for="folder in foldersList" :key="folder.id" class="flex flex-col gap-3 p-4 rounded-2xl bg-muted/30 border border-border/50">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex flex-col gap-0.5 overflow-hidden text-left">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-sm font-semibold truncate">{{ folder.name }}</span>
-                                                <span v-if="folder.is_indexing" class="flex items-center gap-1 text-[9px] text-primary font-black uppercase">
-                                                    <RefreshCw class="h-2 w-2 animate-spin" />
+                                <div
+                                    v-for="folder in foldersList"
+                                    :key="folder.id"
+                                    class="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/30 p-4"
+                                >
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <div
+                                            class="flex flex-col gap-0.5 overflow-hidden text-left"
+                                        >
+                                            <div
+                                                class="flex items-center gap-2"
+                                            >
+                                                <span
+                                                    class="truncate text-sm font-semibold"
+                                                    >{{ folder.name }}</span
+                                                >
+                                                <span
+                                                    v-if="folder.is_indexing"
+                                                    class="flex items-center gap-1 text-[9px] font-black text-primary uppercase"
+                                                >
+                                                    <RefreshCw
+                                                        class="h-2 w-2 animate-spin"
+                                                    />
                                                     Indexing...
                                                 </span>
                                             </div>
-                                            <span class="text-[10px] text-muted-foreground truncate">{{ folder.path }}</span>
+                                            <span
+                                                class="truncate text-[10px] text-muted-foreground"
+                                                >{{ folder.path }}</span
+                                            >
                                         </div>
                                         <div class="flex items-center gap-2">
-                                            <Button 
-                                                variant="ghost" 
-                                                size="icon" 
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
                                                 class="h-8 w-8 rounded-xl"
-                                                :class="folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground'"
+                                                :class="[
+                                                    folder.allow_visual_indexing
+                                                        ? 'bg-blue-500/10 text-blue-500'
+                                                        : 'text-muted-foreground',
+                                                    folder.is_indexing
+                                                        ? 'cursor-not-allowed opacity-30'
+                                                        : '',
+                                                ]"
+                                                :disabled="folder.is_indexing"
                                                 @click="toggleVisual(folder.id)"
-                                                title="Toggle Visual Intelligence"
+                                                :title="
+                                                    folder.is_indexing
+                                                        ? 'System busy: Finish indexing before modifying vision'
+                                                        : 'Toggle Visual Intelligence'
+                                                "
                                             >
-                                                <component :is="folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-4 w-4" />
+                                                <component
+                                                    :is="
+                                                        folder.allow_visual_indexing
+                                                            ? ScanEye
+                                                            : EyeOff
+                                                    "
+                                                    class="h-4 w-4"
+                                                />
                                             </Button>
-                                            <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)">
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                class="h-8 w-8 rounded-xl text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
+                                                @click="removeFolder(folder.id)"
+                                            >
                                                 <Trash2 class="h-4 w-4" />
                                             </Button>
                                         </div>
@@ -669,16 +998,175 @@ const toggleVisual = (id: number) => {
                                 </div>
                             </div>
 
-                            <div class="pt-4 flex flex-col gap-3">
-                                <Button variant="outline" class="w-full rounded-xl" @click="addFolder">
+                            <div class="flex flex-col gap-3 pt-4">
+                                <Button
+                                    variant="outline"
+                                    class="w-full rounded-xl"
+                                    @click="addFolder"
+                                >
                                     <FolderPlus class="mr-2 h-4 w-4" />
                                     Authorize New Folder
                                 </Button>
                             </div>
                         </CardContent>
                     </Card>
-                </div>
 
+                    <Card>
+                        <CardHeader>
+                            <CardTitle
+                                class="flex items-center gap-2 text-blue-600"
+                            >
+                                <BrainCircuit class="h-5 w-5" />
+                                Memory Architecture
+                            </CardTitle>
+                            <CardDescription>
+                                Arkhein uses a dual-layer memory system for
+                                sovereignty and speed.
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <div class="space-y-6">
+                                <!-- Progress Bar for Reconciliation -->
+                                <div
+                                    v-if="isRebuilding"
+                                    class="space-y-3 rounded-2xl border border-blue-500/20 bg-blue-500/5 p-4"
+                                >
+                                    <div
+                                        class="flex items-center justify-between text-[10px] font-black tracking-widest text-blue-600 uppercase"
+                                    >
+                                        <span
+                                            >System Reconciliation in
+                                            Progress</span
+                                        >
+                                        <span>{{ reconcileProgress }}%</span>
+                                    </div>
+                                    <div
+                                        class="h-2 w-full overflow-hidden rounded-full bg-blue-500/10"
+                                    >
+                                        <div
+                                            class="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] transition-all duration-500 ease-out"
+                                            :style="{
+                                                width: reconcileProgress + '%',
+                                            }"
+                                        ></div>
+                                    </div>
+                                    <p
+                                        class="text-[9px] text-muted-foreground italic"
+                                    >
+                                        Batched shadow rebuild: Preparing fresh
+                                        high-speed binary indices without
+                                        downtime.
+                                    </p>
+                                </div>
+
+                                <!-- SQLite Layer (SSOT) -->
+                                <div
+                                    class="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/40 p-4"
+                                >
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <div class="flex items-center gap-2">
+                                            <div
+                                                class="rounded-lg bg-blue-500/10 p-1.5 text-blue-600 dark:text-blue-400"
+                                            >
+                                                <Database class="h-4 w-4" />
+                                            </div>
+                                            <span
+                                                class="text-xs font-bold tracking-wider uppercase"
+                                                >Primary SSOT</span
+                                            >
+                                        </div>
+                                        <span
+                                            class="rounded-full bg-blue-500/10 px-2 py-0.5 font-mono text-[10px] text-blue-600"
+                                            >SQLite</span
+                                        >
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span
+                                            class="text-[10px] leading-relaxed text-muted-foreground"
+                                        >
+                                            The Single Source of Truth where all
+                                            embeddings, text, and metadata are
+                                            persisted.
+                                        </span>
+                                        <span
+                                            class="truncate font-mono text-[9px] text-muted-foreground opacity-60"
+                                            >database: nativephp.sqlite</span
+                                        >
+                                    </div>
+                                </div>
+
+                                <!-- Vektor Layer (Accelerator) -->
+                                <div
+                                    class="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/40 p-4"
+                                >
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <div class="flex items-center gap-2">
+                                            <div
+                                                class="rounded-lg bg-orange-500/10 p-1.5 text-orange-600 dark:text-orange-400"
+                                            >
+                                                <RefreshCw class="h-4 w-4" />
+                                            </div>
+                                            <span
+                                                class="text-xs font-bold tracking-wider uppercase"
+                                                >Vektor Accelerator</span
+                                            >
+                                        </div>
+                                        <span
+                                            class="rounded-full bg-orange-500/10 px-2 py-0.5 font-mono text-[10px] text-orange-600"
+                                            >Binary Index</span
+                                        >
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span
+                                            class="text-[10px] leading-relaxed text-muted-foreground"
+                                        >
+                                            A high-speed binary index rebuilt
+                                            automatically from the SSOT if
+                                            corrupted or missing.
+                                        </span>
+                                        <span
+                                            class="truncate font-mono text-[9px] text-muted-foreground opacity-60"
+                                            >path:
+                                            storage/app/vektor/vector.bin</span
+                                        >
+                                    </div>
+                                </div>
+
+                                <div class="pt-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        class="h-9 w-full rounded-xl border-dashed text-xs"
+                                        @click="rebuildIndex"
+                                        :disabled="isBusy"
+                                    >
+                                        <RefreshCw
+                                            class="mr-2 h-3 w-3"
+                                            :class="{
+                                                'animate-spin': isRebuilding,
+                                            }"
+                                        />
+                                        {{
+                                            isRebuilding
+                                                ? 'Reconciling...'
+                                                : 'Force Index Reconciliation'
+                                        }}
+                                    </Button>
+                                    <p
+                                        class="mt-3 px-4 text-center text-[9px] text-muted-foreground italic"
+                                    >
+                                        Reconciles the binary accelerator with
+                                        the SQLite Source of Truth.
+                                    </p>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
             </div>
         </div>
     </AppLayout>

@@ -23,11 +23,12 @@ return new class extends Migration
             $table->id();
             $table->string('path')->unique();
             $table->string('name');
-            $table->boolean('is_indexing')->default(false);
+            $table->string('sync_status')->default('idle'); // idle, queued, indexing, staleness
+            $table->boolean('is_indexing')->default(false); // Keep for legacy/backward compat if needed, but we prefer status
             $table->integer('indexing_progress')->default(0);
             $table->string('current_indexing_file')->nullable();
-            $table->string('binary_hash')->nullable(); // To track Vektor index integrity
-            $table->boolean('allow_visual_indexing')->default(false); // Controlled Vision
+            $table->string('binary_hash')->nullable();
+            $table->boolean('allow_visual_indexing')->default(false);
             $table->timestamp('last_indexed_at')->nullable();
             $table->timestamps();
         });
@@ -55,7 +56,8 @@ return new class extends Migration
             $table->foreignUuid('document_id')->nullable()->constrained('documents')->cascadeOnDelete();
             $table->string('type')->index(); // file_part, fact, insight, visual_description
             $table->string('mime_type')->nullable(); // Fragment-level media identification
-            $table->text('content');
+            $table->text('content'); // Raw content for LLM
+            $table->text('vector_anchor')->nullable(); // Enriched context used for embedding
             $table->json('embedding');
             $table->json('metadata')->nullable();
             $table->integer('importance')->default(1);

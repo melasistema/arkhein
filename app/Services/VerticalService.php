@@ -24,7 +24,7 @@ class VerticalService
         Log::info("Arkhein Orchestrator: Start", ['query' => $query]);
         $vertical->interactions()->create(['role' => 'user', 'content' => $query]);
 
-        $intent = $this->bouncer->classify($query);
+        $intent = $this->bouncer->classify($query, $vertical);
         $folderPath = $vertical->folder?->path;
         $currentFiles = $this->getFolderFiles($folderPath);
 
@@ -58,7 +58,7 @@ class VerticalService
         Log::info("Arkhein Orchestrator: Stream Start", ['query' => $query]);
         $vertical->interactions()->create(['role' => 'user', 'content' => $query]);
 
-        $intent = $this->bouncer->classify($query);
+        $intent = $this->bouncer->classify($query, $vertical);
         $folderPath = $vertical->folder?->path;
         $currentFiles = $this->getFolderFiles($folderPath);
 
@@ -109,7 +109,7 @@ class VerticalService
         return [];
     }
 
-    protected function getRecentHistory(Vertical $vertical, int $limit = 5): \Illuminate\Support\Collection
+    protected function getRecentHistory(Vertical $vertical, int $limit = 10): \Illuminate\Support\Collection
     {
         return $vertical->interactions()->latest()->skip(1)->limit($limit)->get()->reverse();
     }
@@ -271,12 +271,28 @@ class VerticalService
 
     protected function buildChatMessages($vertical, $query, $knowledge, $history): array
     {
-        $systemPrompt = "You are Arkhein Vantage, an advanced analytical assistant for a specific folder of documents.\nYour primary role is to converse, synthesize, and analyze the documents provided in your knowledge context.\n\nCRITICAL RULES:\n1. Answer questions based on the provided KNOWLEDGE.\n2. If the user asks you to write, draft, or summarize something, DO IT directly in your response. Do not say 'I will create a file'. Just write the text.\n3. You CANNOT create or move files directly.\n4. Be PROACTIVE: If you just provided a long summary or drafted a document, politely suggest to the user: 'If you want me to save this to a file, just use the command `/create [filename]`'.\n5. If the user asks you to move or organize files, explain: 'I can organize your files! Just type `/organize` or `/move [filename] [folder]`.'";
+        $systemPrompt = "You are Arkhein Vantage, an advanced analytical assistant for a specific folder of documents.\nYour primary role is to converse, synthesize, and analyze the documents provided in your knowledge context.\n\nCRITICAL RULES:\n1. Answer questions based on the provided SILO MANIFEST and RELEVANT FRAGMENTS.\n2. USE THE SILO MANIFEST to understand what files exist. This is your 'Ground Truth' for the folder structure.\n3. If the user asks for a list, a count, or 'what is in here', use the SILO MANIFEST exclusively.\n4. Use RELEVANT FRAGMENTS for deep details inside those files.\n5. If the user asks you to write, draft, or summarize something, DO IT directly in your response.\n6. You CANNOT create or move files directly.\n7. Be PROACTIVE: If you just provided a long summary or drafted a document, politely suggest to the user: 'If you want me to save this to a file, just use the command `/create [filename]`'.";
 
         $messages = [['role' => 'system', 'content' => $systemPrompt]];
+
+        // 1. Build the Silo Manifest (Structural Ground Truth)
+        $allDocs = \App\Models\Document::where('folder_id', $vertical->folder_id)->get(['path', 'filename', 'summary']);
+        $manifest = "### SILO MANIFEST (AUTHORIZED FILES):\n";
+        if ($allDocs->isEmpty()) {
+            $manifest .= "No documents found in this silo.\n";
+        } else {
+            foreach ($allDocs as $doc) {
+                $manifest .= "- File: {$doc->path} | Summary: " . ($doc->summary ?: 'No summary available') . "\n";
+            }
+        }
+        
+        // Inject Manifest as a SYSTEM-level message so it stays anchored
+        $messages[] = ['role' => 'system', 'content' => $manifest];
+
         foreach ($history as $msg) { $messages[] = ['role' => $msg->role, 'content' => $msg->content]; }
         
-        $ctx = "### KNOWLEDGE (AUTHORIZED USER DATA):\n";
+        // 2. Build the Deep Knowledge Context (RAG)
+        $ctx = "### RELEVANT FRAGMENTS (DEEP DETAILS):\n";
         $currentSource = '';
         foreach ($knowledge as $item) { 
             $sourceName = $item['metadata']['filename'] ?? 'unknown';

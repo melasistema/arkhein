@@ -41,7 +41,10 @@ class IndexFolderJob implements ShouldQueue
          $this->withIndexLock(function () use ($archive, $memory) {
              Log::info("Arkhein: Starting background indexing for folder: {$this->folder->name}");
 
-             $this->folder->update(['is_indexing' => true]);
+             $this->folder->update([
+                 'sync_status' => ManagedFolder::STATUS_INDEXING,
+                 'is_indexing' => true
+             ]);
 
              try {
                  $report = $archive->indexFolder($this->folder);
@@ -52,6 +55,7 @@ class IndexFolderJob implements ShouldQueue
 
                  $this->folder->update([
                      'last_indexed_at' => now(),
+                     'sync_status' => ManagedFolder::STATUS_IDLE,
                      'is_indexing' => false,
                  ]);
 
@@ -62,7 +66,10 @@ class IndexFolderJob implements ShouldQueue
 
                 Log::info("Arkhein: Finished indexing folder: {$this->folder->name}", $report);
             } catch (\Throwable $e) {
-                $this->folder->update(['is_indexing' => false]);
+                $this->folder->update([
+                    'sync_status' => ManagedFolder::STATUS_IDLE,
+                    'is_indexing' => false
+                ]);
                 Log::error("Arkhein: Indexing job failed for {$this->folder->name}: " . $e->getMessage());
                 throw $e;
             }

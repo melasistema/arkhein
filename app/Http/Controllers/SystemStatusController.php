@@ -13,18 +13,22 @@ class SystemStatusController extends Controller
      */
     public function heartbeat()
     {
-        $indexingFolders = ManagedFolder::where('is_indexing', true)->get(['id', 'name', 'indexing_progress', 'current_indexing_file']);
+        $activeFolders = ManagedFolder::whereIn('sync_status', [
+            ManagedFolder::STATUS_INDEXING, 
+            ManagedFolder::STATUS_QUEUED
+        ])->get(['id', 'name', 'indexing_progress', 'current_indexing_file', 'sync_status']);
+
         $isReconciling = Setting::get('system_reconcile_status') === 'running';
         
         return response()->json([
-            'is_busy' => $indexingFolders->isNotEmpty() || $isReconciling,
-            'is_indexing' => $indexingFolders->isNotEmpty(),
+            'is_busy' => $activeFolders->isNotEmpty() || $isReconciling,
+            'is_indexing' => $activeFolders->contains('sync_status', ManagedFolder::STATUS_INDEXING),
             'is_reconciling' => $isReconciling,
-            'indexing_count' => $indexingFolders->count(),
+            'indexing_count' => $activeFolders->count(),
             'reconcile_progress' => (int) Setting::get('system_reconcile_progress', 0),
             'details' => [
-                'folders' => $indexingFolders,
-                'status_text' => $this->buildStatusText($indexingFolders, $isReconciling)
+                'folders' => $activeFolders,
+                'status_text' => $this->buildStatusText($activeFolders, $isReconciling)
             ]
         ]);
     }
@@ -32,10 +36,19 @@ class SystemStatusController extends Controller
     protected function buildStatusText($folders, $isReconciling): string
     {
         if ($isReconciling) return "Reconciling Sovereign Memory...";
+        
         if ($folders->isNotEmpty()) {
-            if ($folders->count() === 1) return "Indexing @{$folders->first()->name}...";
-            return "Indexing {$folders->count()} authorized silos...";
+            $indexing = $folders->where('sync_status', ManagedFolder::STATUS_INDEXING);
+            $queued = $folders->where('sync_status', ManagedFolder::STATUS_QUEUED);
+
+            if ($indexing->isNotEmpty()) {
+                if ($indexing->count() === 1) return "Indexing @{$indexing->first()->name}...";
+                return "Indexing {$indexing->count()} authorized silos...";
+            }
+
+            return "Tasks queued for {$queued->count()} folders...";
         }
+
         return "Ready";
     }
 }
