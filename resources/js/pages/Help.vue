@@ -183,6 +183,17 @@ onMounted(() => {
 
             <!-- Chat Body -->
             <div ref="scrollAreaRef" class="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
+                <!-- Strategic Scope Tip -->
+                <div class="px-4 py-3 rounded-2xl bg-primary/5 border border-primary/10 flex items-start gap-3 animate-in fade-in slide-in-from-top-2 duration-700">
+                    <Sparkles class="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                    <div class="space-y-1">
+                        <p class="text-[10px] font-bold text-primary uppercase tracking-wider">Global Search Active</p>
+                        <p class="text-[11px] text-muted-foreground leading-relaxed">
+                            The Archivist searches across all authorized silos. For **deep, exhaustive analysis** of a specific folder, use a dedicated card in the <a href="/vantage" class="text-primary hover:underline font-bold">Vantage Hub</a>.
+                        </p>
+                    </div>
+                </div>
+
                 <div v-if="localInteractions.length === 0" class="h-full flex flex-col items-center justify-center text-center opacity-40 py-20">
                     <div class="p-6 rounded-[2.5rem] bg-muted/40 mb-6 border border-border/40 shadow-inner">
                         <BrainCircuit class="h-10 w-10 text-primary" />

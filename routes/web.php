@@ -80,5 +80,6 @@ Route::middleware([])->group(function () {
     Route::post('/settings/sync', [SettingsController::class, 'sync'])->name('settings.sync');
     Route::post('/settings/rebuild', [SettingsController::class, 'rebuild'])->name('settings.rebuild');
     Route::post('/settings/folders', [SettingsController::class, 'addFolder'])->name('settings.folders.add');
+    Route::post('/settings/folders/{folder}/toggle-visual', [SettingsController::class, 'toggleVisualIndexing'])->name('settings.folders.toggle-visual');
     Route::delete('/settings/folders/{folder}', [SettingsController::class, 'removeFolder'])->name('settings.folders.remove');
 });

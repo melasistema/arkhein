@@ -10,6 +10,7 @@ use App\Services\Extractors\MediaProcessorInterface;
 use App\Services\Extractors\TextProcessor;
 use App\Services\Extractors\PdfProcessor;
 use App\Services\Extractors\VisualProcessor;
+use App\Services\Extractors\PresenceProcessor;
 use App\ValueObjects\MediaResult;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Log;
@@ -36,6 +37,7 @@ class ArchiveService
         $this->processors[] = new TextProcessor();
         $this->processors[] = new PdfProcessor();
         $this->processors[] = new VisualProcessor($this->ollama);
+        $this->processors[] = new PresenceProcessor();
     }
 
     /**
@@ -66,15 +68,21 @@ class ArchiveService
             'current_indexing_file' => null
         ]);
 
+        $lastUpdateAt = microtime(true);
+
         foreach ($files as $index => $file) {
             $relativePath = $file->getRelativePathname();
             
             // Phase 1: 0% -> 90% (Processing files and getting embeddings)
-            $progress = (int) (($index / $totalFiles) * 90);
-            $folder->update([
-                'indexing_progress' => $progress,
-                'current_indexing_file' => $relativePath
-            ]);
+            // Throttle DB updates to once per second to prevent SQLite lock contention
+            if (microtime(true) - $lastUpdateAt > 1.0) {
+                $progress = (int) (($index / $totalFiles) * 90);
+                $folder->update([
+                    'indexing_progress' => $progress,
+                    'current_indexing_file' => $relativePath
+                ]);
+                $lastUpdateAt = microtime(true);
+            }
 
             if ($this->shouldIgnore($relativePath)) continue;
             
@@ -120,12 +128,25 @@ class ArchiveService
             ->where('path', $relativePath)
             ->first();
 
-        if (!$force && $vessel && $vessel->checksum === $checksum) {
+        // Smart Promotion: If we have sight now but only a presence record exists, force promotion
+        $needsPromotion = $vessel && 
+                         str_starts_with($mimeType, 'image/') && 
+                         $folder->allow_visual_indexing && 
+                         ($vessel->metadata['is_presence_only'] ?? false);
+
+        if (!$force && $vessel && $vessel->checksum === $checksum && !$needsPromotion) {
             return ['chunks' => 0];
         }
 
         // 2. Select Processor
         $processor = $this->getProcessor($extension, $mimeType);
+
+        // Controlled Vision: Skip VisualProcessor if not authorized for this folder
+        if ($processor instanceof VisualProcessor && !$folder->allow_visual_indexing) {
+            Log::debug("Arkhein MediaCore: Skipping VisualProcessor for folder @{$folder->name} (Unauthorized)");
+            $processor = $this->getProcessorByClass(PresenceProcessor::class);
+        }
+
         if (!$processor) {
             Log::debug("Arkhein: No processor found for {$relativePath} ({$mimeType})");
             return ['chunks' => 0];
@@ -216,7 +237,22 @@ class ArchiveService
     protected function getProcessor(string $extension, string $mimeType): ?MediaProcessorInterface
     {
         foreach ($this->processors as $processor) {
+            // Skip presence processor during normal detection so it doesn't hijack specific ones
+            if ($processor instanceof PresenceProcessor) continue;
+
             if ($processor->supports($extension, $mimeType)) {
+                return $processor;
+            }
+        }
+        
+        // Fallback to presence
+        return $this->getProcessorByClass(PresenceProcessor::class);
+    }
+
+    protected function getProcessorByClass(string $className): ?MediaProcessorInterface
+    {
+        foreach ($this->processors as $processor) {
+            if (get_class($processor) === $className) {
                 return $processor;
             }
         }
@@ -280,12 +316,17 @@ class ArchiveService
 
     protected function shouldIgnore(string $relativePath): bool
     {
-        foreach ($this->ignoreFolders as $folder) {
-            if (str_contains($relativePath, DIRECTORY_SEPARATOR . $folder . DIRECTORY_SEPARATOR) || 
-                str_starts_with($relativePath, $folder . DIRECTORY_SEPARATOR)) {
+        $segments = explode(DIRECTORY_SEPARATOR, $relativePath);
+        $rootFolder = $segments[0] ?? '';
+
+        // Only ignore standard 'junk' if it's at the TOP level of the authorized silo
+        // or if it's a hidden folder (starts with .)
+        foreach ($this->ignoreFolders as $ignored) {
+            if ($rootFolder === $ignored || str_starts_with($rootFolder, '.')) {
                 return true;
             }
         }
+
         return false;
     }
 }

@@ -17,7 +17,12 @@ class IndexFolderJob implements ShouldQueue
     /**
      * The number of seconds the job can run before timing out.
      */
-    public $timeout = 600;
+    public $timeout = 3600;
+
+    /**
+     * The number of times the job may be attempted.
+     */
+    public $tries = 1;
 
     /**
      * Create a new job instance.

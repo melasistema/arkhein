@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, useForm } from '@inertiajs/vue3';
 import axios from 'axios';
-import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database } from 'lucide-vue-next';
+import { Settings as SettingsIcon, Save, Sparkles, BrainCircuit, Ruler, AlertTriangle, FolderPlus, Trash2, ShieldCheck, RefreshCw, Palette, Lock, Unlock, Info, Zap, Database, Eye, EyeOff, ScanEye } from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
 import Button from '@/components/ui/button/Button.vue';
@@ -225,6 +225,30 @@ const removeFolder = (id: number) => {
         preserveScroll: true,
         onFinish: () => {
             foldersList.value = foldersList.value.filter(f => f.id !== id);
+        }
+    });
+};
+
+const toggleVisual = (id: number) => {
+    if (isBusy.value) return;
+
+    const folder = foldersList.value.find(f => f.id === id);
+    if (!folder) return;
+
+    const isAlreadyEnabled = folder.allow_visual_indexing;
+    const message = isAlreadyEnabled 
+        ? "Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)"
+        : "Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes. Continue?";
+
+    if (!confirm(message)) return;
+
+    useForm({}).post(`/settings/folders/${id}/toggle-visual`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            if (!isAlreadyEnabled) {
+                folder.allow_visual_indexing = true;
+            }
+            startPolling(); // Show indexing progress
         }
     });
 };
@@ -626,9 +650,21 @@ const removeFolder = (id: number) => {
                                             </div>
                                             <span class="text-[10px] text-muted-foreground truncate">{{ folder.path }}</span>
                                         </div>
-                                        <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)">
-                                            <Trash2 class="h-4 w-4" />
-                                        </Button>
+                                        <div class="flex items-center gap-2">
+                                            <Button 
+                                                variant="ghost" 
+                                                size="icon" 
+                                                class="h-8 w-8 rounded-xl"
+                                                :class="folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground'"
+                                                @click="toggleVisual(folder.id)"
+                                                title="Toggle Visual Intelligence"
+                                            >
+                                                <component :is="folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-4 w-4" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" class="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl" @click="removeFolder(folder.id)">
+                                                <Trash2 class="h-4 w-4" />
+                                            </Button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>

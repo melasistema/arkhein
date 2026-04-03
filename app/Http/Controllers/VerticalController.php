@@ -122,7 +122,7 @@ class VerticalController extends Controller
 
     public function query(Request $request, string $verticalId, \App\Services\VerticalService $verticalService)
     {
-        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
+        set_time_limit(config('arkhein.protocols.inference_timeout', 300));
 
         $vertical = Vertical::with('folder')->findOrFail($verticalId);
         $request->validate(['query' => 'required|string']);
@@ -136,7 +136,7 @@ class VerticalController extends Controller
 
     public function streamQuery(Request $request, string $verticalId, \App\Services\VerticalService $verticalService)
     {
-        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
+        set_time_limit(config('arkhein.protocols.inference_timeout', 300));
 
         $vertical = Vertical::with('folder')->findOrFail($verticalId);
         $request->validate(['query' => 'required|string']);

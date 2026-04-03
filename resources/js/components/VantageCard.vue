@@ -3,7 +3,7 @@ import axios from 'axios';
 import {
     FolderSearch, RefreshCcw, Send, Loader2, Bot, User,
     FileText, Search, Database, HardDrive, Trash2, Eraser,
-    Folder, CheckCircle, ExternalLink
+    Folder, CheckCircle, ExternalLink, ScanEye, EyeOff
 } from 'lucide-vue-next';
 import { ref, onMounted, nextTick, watch } from 'vue';
 import Markdown from '@/components/Markdown.vue';
@@ -35,6 +35,7 @@ const currentVertical = ref(props.vertical);
 const selectedFolderId = ref<string>('');
 const isCreating = ref(false);
 const isSyncing = ref(false);
+const isTogglingVisual = ref(false);
 const isQuerying = ref(false);
 const isClearing = ref(false);
 const query = ref('');
@@ -201,6 +202,41 @@ const syncVertical = async () => {
     }
 };
 
+const toggleVisual = async () => {
+    if (!currentVertical.value || !currentVertical.value.folder || isTogglingVisual.value) return;
+
+    const folder = currentVertical.value.folder;
+    const isAlreadyEnabled = folder.allow_visual_indexing;
+    
+    // Elegant Confirmation Flow
+    const message = isAlreadyEnabled 
+        ? "Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)"
+        : "Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes depending on folder size. Continue?";
+
+    if (!confirm(message)) return;
+
+    isTogglingVisual.value = true;
+    try {
+        const folderId = folder.id;
+        // If it's already enabled, we might want a 'force' sync on the backend
+        // For now, the existing toggle logic is fine, but we trigger the sync UI
+        await axios.post(`/settings/folders/${folderId}/toggle-visual`);
+        
+        // Update local state if it was a first-time activation
+        if (!isAlreadyEnabled) {
+            currentVertical.value.folder.allow_visual_indexing = true;
+        }
+        
+        // Always trigger the sync UI to show progress to the user
+        isSyncing.value = true;
+        setTimeout(() => { isSyncing.value = false; }, 3000);
+    } catch (e) {
+        console.error("Failed to toggle visual indexing", e);
+    } finally {
+        isTogglingVisual.value = false;
+    }
+};
+
 const sendQuery = async () => {
     if (!query.value.trim() || isQuerying.value) return;
     const userMsg = query.value;
@@ -339,6 +375,19 @@ const sendQuery = async () => {
                         </div>
                     </div>
                     <div class="flex gap-1">
+                        <Button 
+                            v-if="currentVertical.folder"
+                            variant="ghost" 
+                            size="icon" 
+                            class="h-7 w-7 rounded-md transition-colors" 
+                            :class="currentVertical.folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground opacity-40'"
+                            :disabled="isTogglingVisual || isSyncing" 
+                            @click="toggleVisual" 
+                            title="Toggle Visual Intelligence"
+                        >
+                            <Loader2 v-if="isTogglingVisual" class="h-3 w-3 animate-spin" />
+                            <component v-else :is="currentVertical.folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-3 w-3" />
+                        </Button>
                         <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isClearing || messages.length === 0" @click="clearHistory" title="Clear Conversation">
                             <Eraser class="h-3 w-3" />
                         </Button>

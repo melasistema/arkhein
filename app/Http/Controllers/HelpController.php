@@ -20,19 +20,19 @@ class HelpController extends Controller
     }
 
     public function send(
-        Request $request, 
-        OllamaService $ollama, 
+        Request $request,
+        OllamaService $ollama,
         PromptService $prompts,
         GlobalRagService $rag
     ) {
-        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
+        set_time_limit(config('arkhein.protocols.inference_timeout', 300));
 
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
         // 1. DISPATCHER: Analyze Strategy
         $strategy = $this->analyzeHelpIntent($input, $ollama);
-        
+
         // 2. RESEARCHER: Surgical Retrieval
         $knowledge = [];
         if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
@@ -53,13 +53,13 @@ class HelpController extends Controller
     }
 
     public function stream(
-        Request $request, 
-        OllamaService $ollama, 
+        Request $request,
+        OllamaService $ollama,
         PromptService $prompts,
         GlobalRagService $rag
     ) {
-        set_time_limit(config('arkhein.boundaries.execution_timeout', 300));
-        
+        set_time_limit(config('arkhein.protocols.inference_timeout', 300));
+
         $input = $request->input('message');
         $this->saveUserMessage($input);
 
@@ -106,25 +106,30 @@ class HelpController extends Controller
 
     protected function analyzeHelpIntent(string $input, OllamaService $ollama): array
     {
-        $prompt = "You are the Arkhein Dispatcher. Analyze the user query and decide if it needs software documentation (SYSTEM) or user data/files (DATA).
-        
+        $prompt = "You are the Arkhein Dispatcher. Analyze the user query and decide the processing strategy.
+
+        INTENT CATEGORIES:
+        - SYSTEM: Questions about Arkhein features, settings, or 'how to use'.
+        - DATA: Queries about specific topics, projects, or contents of files.
+        - PRECISION: Quantitative queries requiring absolute accuracy (totals, math, full lists of files, specific dates).
+        - BOTH: Mixed system and data questions.
+
         RULES:
-        - If query is about Arkhein features, settings, or 'how to use' -> SYSTEM.
-        - If query mentions a specific topic, book, person, or project -> DATA.
-        - If mixed -> BOTH.
+        - If intent is PRECISION, you MUST suggest using a specialized Vantage Card for that specific folder.
+        - If the user asks for a 'total', 'how many', or 'precise list' -> PRECISION.
 
         Respond with ONLY a JSON object:
         {
-          \"intent\": \"SYSTEM\"|\"DATA\"|\"BOTH\",
-          \"thought\": \"A 1-sentence professional reasoning\",
-          \"rag_limit\": 5
+          \"intent\": \"SYSTEM\"|\"DATA\"|\"PRECISION\"|\"BOTH\",
+          \"thought\": \"A 1-sentence professional reasoning explaining the scope choice\",
+          \"rag_limit\": 10
         }
 
         QUERY: \"{$input}\"";
 
         try {
             $response = $ollama->generate($prompt, null, ['format' => 'json']);
-            
+
             // Regex fallback to extract JSON if LLM added filler
             if (preg_match('/\{.*\}/s', $response, $matches)) {
                 $data = json_decode($matches[0], true);
@@ -155,18 +160,22 @@ class HelpController extends Controller
     protected function buildChatPayload(PromptService $prompts, array $knowledge, array $strategy): array
     {
         $history = HelpInteraction::latest()->limit(8)->get()->reverse();
-        
+
         // 1. Workspace Map (Awareness of Authorized Folders)
         $folders = \App\Models\ManagedFolder::all()->map(fn($f) => "- {$f->name} (Path: {$f->path})")->implode("\n");
         $workspaceMetadata = "### CURRENT WORKSPACE MAP:\n" . ($folders ?: "No folders authorized.") . "\n\n";
 
         // 2. Base Persona & Docs
-        $basePrompt = ($strategy['intent'] !== 'DATA') 
-            ? $prompts->buildHelpPrompt() 
-            : "You are the Sovereign Archivist. Answer questions based on provided user data.";
-        
+        $basePrompt = $prompts->buildHelpPrompt();
+
+        if ($strategy['intent'] === 'PRECISION') {
+            $basePrompt .= "\n\nPRECISION MANDATE: The user is asking for quantitative data or a precise list. As the Global Archivist, you only see high-level fragments across all folders. You MUST inform the user that you have a high-level view but for absolute precision (totals, full lists, math), they should use a dedicated card in the Vantage Hub.";
+        } elseif ($strategy['intent'] === 'DATA') {
+            $basePrompt = "You are the Sovereign Archivist. Answer questions based on provided user data.";
+        }
+
         $prompt = "{$basePrompt}\n\n{$workspaceMetadata}";
-        
+
         // 3. User Data / RAG
         if (!empty($knowledge)) {
             $prompt .= "### RELEVANT DOCUMENTATION (AUTHORIZED USER DATA):\n";
@@ -182,7 +191,7 @@ class HelpController extends Controller
                     if ($summary) $prompt .= "DOCUMENT SUMMARY: {$summary}\n";
                     $currentSource = $sourceName;
                 }
-                
+
                 $prompt .= "FRAGMENT: " . $k['content'] . "\n\n";
             }
         } else if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {

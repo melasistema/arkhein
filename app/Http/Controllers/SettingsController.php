@@ -100,6 +100,20 @@ class SettingsController extends Controller
         return Inertia::render('Settings', $data);
     }
 
+    public function toggleVisualIndexing(ManagedFolder $folder)
+    {
+        $folder->update([
+            'allow_visual_indexing' => !$folder->allow_visual_indexing
+        ]);
+
+        // If toggled ON, trigger a background sync to "promote" existing presence-only media
+        if ($folder->allow_visual_indexing) {
+            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
+        }
+
+        return back();
+    }
+
     public function sync()
     {
         $folders = ManagedFolder::all();

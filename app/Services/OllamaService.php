@@ -50,7 +50,7 @@ class OllamaService
             $payload['options'] = $options['options'];
         }
 
-        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $timeout = config('arkhein.protocols.inference_timeout', 300);
         $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
 
         if ($response->failed()) {
@@ -84,7 +84,7 @@ class OllamaService
         if (isset($options['format'])) $payload['format'] = $options['format'];
         if (isset($options['options'])) $payload['options'] = $options['options'];
 
-        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $timeout = config('arkhein.protocols.inference_timeout', 300);
         $response = Http::timeout($timeout)->post("{$this->host}/api/chat", $payload);
 
         if ($response->failed()) {
@@ -119,7 +119,7 @@ class OllamaService
         if (isset($options['format'])) $payload['format'] = $options['format'];
         if (isset($options['options'])) $payload['options'] = $options['options'];
 
-        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $timeout = config('arkhein.protocols.inference_timeout', 300);
         
         try {
             $response = Http::timeout($timeout)
@@ -218,7 +218,7 @@ class OllamaService
             'stream' => false,
         ];
 
-        $timeout = config('arkhein.boundaries.execution_timeout', 300);
+        $timeout = config('arkhein.protocols.inference_timeout', 300);
         $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
 
         if ($response->failed()) {

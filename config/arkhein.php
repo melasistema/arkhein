@@ -20,15 +20,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Operational Boundaries (The Sandbox)
+    | Operational Protocols (The Sandbox)
     |--------------------------------------------------------------------------
     | Hard limits for the agent's physical interactions with the host OS.
     */
-    'boundaries' => [
-        'max_file_scan_depth' => 2,
-        'max_registry_items' => 200,
-        'execution_timeout' => 300, // Seconds
-        'action_protocol_required' => true,
+    'protocols' => [
+        'silo_recursion_limit' => 20,      // Max depth for folder scanning
+        'knowledge_fragment_limit' => 500, // Max chunks per document
+        'inference_timeout' => 600,        // 10 minutes for long reasoning/indexing
+        'explicit_operator_consent' => true, // Human-in-the-loop requirement
     ],
 
     /*
