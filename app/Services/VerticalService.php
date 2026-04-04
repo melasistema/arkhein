@@ -13,7 +13,8 @@ class VerticalService
         protected RagService $rag,
         protected ActionService $actionService,
         protected IntentService $bouncer,
-        protected ActionExtractor $worker
+        protected ActionExtractor $worker,
+        protected FileArchitectService $architect
     ) {}
 
     /**
@@ -179,8 +180,12 @@ class VerticalService
                 $reasoning = $result['reasoning'];
                 $this->fillPlaceholders($vertical, $pendingActions);
 
+                $isDrafting = collect($pendingActions)->contains(fn($a) => ($a['params']['content'] ?? '') === 'AGENT_DRAFTING_IN_PROGRESS');
+
                 $assistantResponse = !empty($pendingActions) 
-                    ? "Command parsed. I've prepared the plan. Please confirm below."
+                    ? ($isDrafting 
+                        ? "I have started the **Document Architect** pipeline to assemble this file in the background. This is a complex task involving multiple documents; you can monitor my progress in the **System Heartbeat**."
+                        : "Command parsed. I've prepared the plan. Please confirm below.")
                     : "I couldn't identify the specific targets for that command. Try `/create [filename]`.";
                 break;
 
@@ -217,23 +222,34 @@ class VerticalService
             if ($action['type'] === 'create_file' && ($action['params']['content'] ?? '') === 'PLACEHOLDER') {
                 $instruction = $action['params']['instruction'] ?? null;
                 if ($instruction) {
-                    $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
-                    
-                    // The 'Document Architect' Protocol: Higher density, better structure
-                    $prompt = "You are the Arkhein Document Architect.\n" .
-                             "TASK: Draft a professional markdown document based on the provided KNOWLEDGE and INSTRUCTION.\n\n" .
-                             "KNOWLEDGE FRAGMENTS:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n" .
-                             "INSTRUCTION: {$instruction}\n\n" .
-                             "RULES:\n" .
-                             "1. Use professional, clear language.\n" .
-                             "2. Structure with appropriate Markdown headers (##, ###).\n" .
-                             "3. Be concise but exhaustive regarding the provided facts.\n" .
-                             "4. Do NOT add preamble (e.g., 'Here is the file...'). Output ONLY the document content.\n\n" .
-                             "DOCUMENT CONTENT:";
+                    // Check if this is an aggregate task (all, every, list of everything)
+                    $isAggregate = preg_match('/\b(all|every|complete|list of|entire)\b/i', $instruction);
 
-                    $action['params']['content'] = $this->ollama->generate($prompt, null, [
-                        'options' => ['temperature' => 0.2, 'num_ctx' => 8192]
-                    ]);
+                    if ($isAggregate && $vertical->folder) {
+                        \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction)
+                            ->onConnection('background');
+                        
+                        $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
+                    } else {
+                        $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
+                        
+                        // The 'Document Architect' Protocol: Higher density, better structure
+                        $prompt = "You are the Arkhein Document Architect.\n" .
+                                 "TASK: Draft a professional markdown document based on the provided KNOWLEDGE and INSTRUCTION.\n\n" .
+                                 "KNOWLEDGE FRAGMENTS:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n" .
+                                 "INSTRUCTION: {$instruction}\n\n" .
+                                 "RULES:\n" .
+                                 "1. Use professional, clear language.\n" .
+                                 "2. Structure with appropriate Markdown headers (##, ###).\n" .
+                                 "3. Be concise but exhaustive regarding the provided facts.\n" .
+                                 "4. Do NOT add preamble (e.g., 'Here is the file...'). Output ONLY the document content.\n\n" .
+                                 "DOCUMENT CONTENT:";
+
+                        $action['params']['content'] = $this->ollama->generate($prompt, null, [
+                            'options' => ['temperature' => 0.2, 'num_ctx' => 8192]
+                        ]);
+                    }
+                    
                     $action['description'] = $this->actionService->describe($action['type'], $action['params']);
                     continue;
                 }

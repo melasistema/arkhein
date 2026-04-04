@@ -2,112 +2,188 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\File;
+use App\Models\Document;
+use App\Models\ManagedFolder;
 use Illuminate\Support\Facades\Log;
 
 class FileArchitectService
 {
-    public function __construct(protected OllamaService $ollama) {}
+    public function __construct(
+        protected OllamaService $ollama,
+        protected RagService $rag
+    ) {}
 
     /**
-     * Generate explicit actions based on the current file tree and user request.
+     * Assemble a complex document using a multi-stage agentic pipeline.
      */
-    public function plan(string $folderPath, string $userRequest, ?string $lastProposal = null): array
+    public function assemble(ManagedFolder $folder, string $instruction, callable $onProgress = null): string
     {
-        $currentTree = $this->getTree($folderPath);
-        $filesList = collect($currentTree)->pluck('path')->implode("\n- ");
+        Log::info("Arkhein Architect: Starting assembly", ['instruction' => $instruction]);
+
+        // Stage 1: Target Identification (Selection)
+        if ($onProgress) $onProgress("Identifying target documents...");
+        $targetPaths = $this->identifyTargets($folder, $instruction);
         
-        $prompt = "### ROLE
-        You are a File System Action Planner for a Sovereign macOS Agent.
-        
-        ### SANDBOX
-        Root Folder: {$folderPath}
-        Current Files in Sandbox:
-        - {$filesList}
-
-        ### CONTEXT
-        PREVIOUS PLAN: \"{$lastProposal}\"
-        USER REQUEST: \"{$userRequest}\"
-
-        ### TASK
-        Identify the specific actions needed to satisfy the request within the sandbox.
-        If the user says 'Yes' or 'Proceed', refer to the PREVIOUS PLAN.
-
-        ### OUTPUT FORMAT (Strict JSON)
-        {
-          \"actions\": [
-            { \"type\": \"create_folder\", \"params\": { \"path\": \"docs\" } },
-            { \"type\": \"move_file\", \"params\": { \"from\": \"file.pdf\", \"to\": \"docs/file.pdf\" } },
-            { \"type\": \"create_file\", \"params\": { \"path\": \"Manifesto.md\", \"content\": \"...\" } }
-          ]
+        if (empty($targetPaths)) {
+            Log::warning("Arkhein Architect: No target documents identified.");
+            return "No relevant documents found to fulfill this instruction.";
         }
 
-        ### RULES
-        1. Use RELATIVE PATHS ONLY.
-        2. Use the exact filenames from the 'Current Files' list.
-        3. If no action is needed, return {\"actions\": []}.
-        4. Return ONLY JSON. No conversation.";
+        Log::info("Arkhein Architect: Targets identified", ['count' => count($targetPaths)]);
 
+        // Stage 2: Fact Harvesting (Extraction Loop)
+        $factMap = [];
+        $targetPaths = array_values($targetPaths); // Force simple numeric indices
+        foreach ($targetPaths as $index => $path) {
+            $count = $index + 1;
+            $total = count($targetPaths);
+            if ($onProgress) $onProgress("Harvesting data from document {$count}/{$total}...");
+            
+            $fact = $this->harvestFact($folder, $path, $instruction);
+            if ($fact) {
+                $factMap[] = $fact;
+            }
+        }
+
+        // Stage 3: Final Assembly (Synthesis)
+        if ($onProgress) $onProgress("Synthesizing final document...");
+        return $this->synthesize($factMap, $instruction);
+    }
+
+    /**
+     * Use the Silo Manifest to decide which files are relevant.
+     */
+    protected function identifyTargets(ManagedFolder $folder, string $instruction): array
+    {
+        // 1. WISE HEURISTIC: If user wants 'all' files, don't ask the LLM to guess.
+        // This ensures 100% accuracy for aggregate tasks on small models.
+        if (preg_match('/\b(all|every|everything|complete list|entire)\b/i', $instruction)) {
+            Log::info("Arkhein Architect: Global task detected. Targeting all documents in silo.");
+            return Document::where('folder_id', $folder->id)->pluck('path')->all();
+        }
+
+        // 2. FOCUSED SELECTION: Ask LLM to filter if the task is specific
+        $docs = Document::where('folder_id', $folder->id)->get(['path', 'summary']);
+        $manifest = $docs->map(fn($d) => "- {$d->path} | Summary: {$d->summary}")->implode("\n");
+
+        $prompt = "You are the Arkhein Selection Agent. Based on the SILO MANIFEST and the USER INSTRUCTION, identify every file that must be read to complete the task.
+        
+        USER INSTRUCTION: \"{$instruction}\"
+        
+        SILO MANIFEST:
+        {$manifest}
+
+        Respond ONLY with a JSON array of strings representing the relative file paths.
+        Example: [\"file1.md\", \"folder/file2.md\"]";
+
+        $response = $this->ollama->generate($prompt, null, ['format' => 'json']);
+        
         try {
-            $response = $this->ollama->generate($prompt, null, [
-                'format' => 'json',
-                'options' => [
-                    'temperature' => 0,
-                    'num_predict' => 2000
-                ]
-            ]);
-
-            Log::debug("FileArchitect: Raw JSON: " . $response);
-
             $data = json_decode($response, true);
-            if (!isset($data['actions']) || !is_array($data['actions'])) return [];
+            
+            // Handle common LLM output variations
+            if (isset($data['paths'])) $data = $data['paths'];
+            if (isset($data['files'])) $data = $data['files'];
+            if (isset($data['targets'])) $data = $data['targets'];
 
-            return $this->normalizeActions($data['actions'], $folderPath);
-        } catch (\Throwable $e) {
-            Log::error("FileArchitect: Planning failed: " . $e->getMessage());
+            if (!is_array($data)) return [];
+
+            // Flat-mapping: Ensure we have strings, even if LLM returned objects like [{"path": "..."}]
+            return collect($data)->map(function($item) {
+                if (is_array($item)) {
+                    return $item['path'] ?? $item['file'] ?? $item['name'] ?? null;
+                }
+                return is_string($item) ? $item : null;
+            })->filter()->values()->all();
+
+        } catch (\Exception $e) {
+            Log::error("Arkhein Architect: Failed to parse target JSON", ['response' => $response]);
             return [];
         }
     }
 
-    protected function getTree(string $path): array
+    /**
+     * Read a specific file and extract the requested detail.
+     */
+    protected function harvestFact(ManagedFolder $folder, string $path, string $instruction): ?string
     {
-        if (!File::isDirectory($path)) return [];
-        return collect(File::allFiles($path))
-            ->map(fn($f) => ['path' => $f->getRelativePathname()])
-            ->toArray();
-    }
+        // 1. Fetch document context
+        $vessel = Document::where('folder_id', $folder->id)->where('path', $path)->first();
+        if (!$vessel) return null;
 
-    protected function normalizeActions(array $actions, ?string $folderPath): array
-    {
-        $normalized = [];
-        $actionService = app(ActionService::class);
+        // 2. FETCH ALL FRAGMENTS DIRECTLY
+        $fragments = \App\Models\Knowledge::on('nativephp')
+            ->where('document_id', $vessel->id)
+            ->orderBy('metadata->chunk_index', 'asc')
+            ->pluck('content')
+            ->implode("\n\n");
 
-        foreach ($actions as $action) {
-            if (!isset($action['type'], $action['params'])) continue;
+        if (empty(trim($fragments))) return null;
 
-            $type = $action['type'];
-            $params = $action['params'];
+        // 3. Precise Extraction Pass
+        $prompt = "You are the Arkhein Data Miner.
+        TASK: Extract the EXACT values from the FILE CONTENT to fulfill the TARGET REQUIREMENT.
+        
+        FILE: {$path}
+        TARGET REQUIREMENT: \"{$instruction}\"
+        
+        FILE CONTENT:
+        {$fragments}
 
-            // Handle Aliases
-            if (isset($params['name']) && !isset($params['path'])) $params['path'] = $params['name'];
-            if (isset($params['source']) && !isset($params['from'])) $params['from'] = $params['source'];
-            if (isset($params['destination']) && !isset($params['to'])) $params['to'] = $params['destination'];
+        RULES:
+        1. Extract specific NAMES, DATES, and DETAILS.
+        2. Do NOT use generic labels or placeholders.
+        3. One sentence maximum.
+        4. If the data is missing, respond with 'NOT_FOUND'.
+        
+        EXTRACTED DATA:";
 
-            // Sandbox Normalization: Ensure paths are relative to the folder
-            foreach (['path', 'from', 'to'] as $key) {
-                if (isset($params[$key]) && !empty($params[$key])) {
-                    $p = $params[$key];
-                    // Strip absolute path hallucinations if folderPath is known
-                    if ($folderPath && str_contains($p, $folderPath)) {
-                        $p = str_replace($folderPath, '', $p);
-                    }
-                    $params[$key] = ltrim($p, DIRECTORY_SEPARATOR . " ");
-                }
-            }
-
-            $normalized[] = $actionService->propose($type, $params);
+        $fact = $this->ollama->generate($prompt, null, [
+            'options' => [
+                'temperature' => 0, 
+                'num_ctx' => 8192,
+                'num_predict' => 256
+            ]
+        ]);
+        
+        $fact = trim($fact);
+        if (str_contains(strtoupper($fact), 'NOT_FOUND') || empty($fact)) {
+            return null;
         }
 
-        return $normalized;
+        return "- SOURCE [{$path}]: {$fact}";
+    }
+
+    /**
+     * Combine harvested facts into a polished document.
+     */
+    protected function synthesize(array $factMap, string $instruction): string
+    {
+        $data = implode("\n", $factMap);
+        
+        $prompt = "You are the Arkhein Master Architect.
+        TASK: Assemble the provided SOURCE DATA into a professional Markdown document.
+        
+        USER INSTRUCTION: \"{$instruction}\"
+        
+        SOURCE DATA:
+        {$data}
+
+        STRICT RULES:
+        1. USE THE EXACT NAMES AND DETAILS FROM THE SOURCE DATA.
+        2. NEVER USE PLACEHOLDERS like 'Primary Diagnosis' or 'Name'.
+        3. If you see 'John Doe: Hypertension' in the data, your document MUST say 'John Doe: Hypertension'.
+        4. Output ONLY the document content. No preamble.
+        5. Use a structured Markdown list or table.
+        
+        FINAL DOCUMENT:";
+
+        return $this->ollama->generate($prompt, null, [
+            'options' => [
+                'temperature' => 0.1, 
+                'num_ctx' => 16384,
+                'num_predict' => 4096 // Ensure we don't truncate long lists
+            ]
+        ]);
     }
 }

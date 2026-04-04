@@ -15,7 +15,8 @@ class SystemStatusController extends Controller
     {
         $activeFolders = ManagedFolder::whereIn('sync_status', [
             ManagedFolder::STATUS_INDEXING, 
-            ManagedFolder::STATUS_QUEUED
+            ManagedFolder::STATUS_QUEUED,
+            'drafting'
         ])->get(['id', 'name', 'indexing_progress', 'current_indexing_file', 'sync_status']);
 
         $isReconciling = Setting::get('system_reconcile_status') === 'running';
@@ -40,6 +41,12 @@ class SystemStatusController extends Controller
         if ($folders->isNotEmpty()) {
             $indexing = $folders->where('sync_status', ManagedFolder::STATUS_INDEXING);
             $queued = $folders->where('sync_status', ManagedFolder::STATUS_QUEUED);
+            $drafting = $folders->where('sync_status', 'drafting');
+
+            if ($drafting->isNotEmpty()) {
+                if ($drafting->count() === 1) return "Drafting @{$drafting->first()->name}...";
+                return "Drafting multiple documents...";
+            }
 
             if ($indexing->isNotEmpty()) {
                 if ($indexing->count() === 1) return "Indexing @{$indexing->first()->name}...";
