@@ -181,11 +181,14 @@ class VerticalService
                 $this->fillPlaceholders($vertical, $pendingActions);
 
                 $isDrafting = collect($pendingActions)->contains(fn($a) => ($a['params']['content'] ?? '') === 'AGENT_DRAFTING_IN_PROGRESS');
+                $isBusy = collect($pendingActions)->contains(fn($a) => ($a['params']['content'] ?? '') === 'AGENT_BUSY_TASK_ALREADY_IN_PROGRESS');
 
                 $assistantResponse = !empty($pendingActions) 
-                    ? ($isDrafting 
-                        ? "I have started the **Document Architect** pipeline to assemble this file in the background. This is a complex task involving multiple documents; you can monitor my progress in the **System Heartbeat**."
-                        : "Command parsed. I've prepared the plan. Please confirm below.")
+                    ? ($isBusy 
+                        ? "I am currently processing another complex task for this folder. Please wait for the current operation to finish before starting a new one."
+                        : ($isDrafting 
+                            ? "I have started the **Document Architect** pipeline to assemble this file in the background. This is a complex task involving multiple documents; you can monitor my progress in the **System Heartbeat**."
+                            : "Command parsed. I've prepared the plan. Please confirm below."))
                     : "I couldn't identify the specific targets for that command. Try `/create [filename]`.";
                 break;
 
@@ -226,10 +229,14 @@ class VerticalService
                     $isAggregate = preg_match('/\b(all|every|complete|list of|entire)\b/i', $instruction);
 
                     if ($isAggregate && $vertical->folder) {
-                        \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction)
-                            ->onConnection('background');
-                        
-                        $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
+                        if ($vertical->folder->sync_status !== \App\Models\ManagedFolder::STATUS_IDLE) {
+                            $action['params']['content'] = "AGENT_BUSY_TASK_ALREADY_IN_PROGRESS";
+                        } else {
+                            \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction)
+                                ->onConnection('background');
+                            
+                            $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
+                        }
                     } else {
                         $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
                         

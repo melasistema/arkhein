@@ -3,7 +3,7 @@ import Breadcrumbs from '@/components/Breadcrumbs.vue';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import type { BreadcrumbItem } from '@/types';
 import { ref, onMounted, onUnmounted, computed } from 'vue';
-import { Activity, RefreshCw, HardDrive, BrainCircuit, AlertCircle, ChevronDown, Clock } from 'lucide-vue-next';
+import { Activity, RefreshCw, HardDrive, BrainCircuit, AlertCircle, ChevronDown, Clock, PenTool } from 'lucide-vue-next';
 import axios from 'axios';
 import {
     DropdownMenu,
@@ -118,18 +118,24 @@ onUnmounted(() => {
                         </div>
                     </div>
 
-                    <!-- Folder Indexing -->
+                    <!-- Folder Tasks (Drafting & Indexing) -->
                     <div v-for="folder in heartbeat.details.folders" :key="folder.id" class="p-2.5 rounded-xl bg-muted/50 border border-border/50 space-y-2">
                         <div class="flex items-center justify-between overflow-hidden">
                             <div class="flex items-center gap-2 overflow-hidden">
                                 <component 
-                                    :is="folder.sync_status === 'indexing' ? HardDrive : Clock" 
+                                    :is="folder.sync_status === 'drafting' ? PenTool : (folder.sync_status === 'indexing' ? HardDrive : Clock)" 
                                     class="h-3 w-3" 
-                                    :class="folder.sync_status === 'indexing' ? 'text-blue-500' : 'text-amber-500'"
+                                    :class="{
+                                        'text-primary': folder.sync_status === 'drafting',
+                                        'text-blue-500': folder.sync_status === 'indexing',
+                                        'text-amber-500': folder.sync_status === 'queued'
+                                    }"
                                 />
                                 <span class="text-[10px] font-bold truncate uppercase">{{ folder.name }}</span>
                             </div>
-                            <span v-if="folder.sync_status === 'indexing'" class="text-[10px] font-black opacity-40">{{ folder.indexing_progress }}%</span>
+                            <span v-if="folder.sync_status !== 'queued'" class="text-[10px] font-black opacity-40">
+                                {{ folder.sync_status === 'indexing' ? folder.indexing_progress + '%' : 'Active' }}
+                            </span>
                             <span v-else class="text-[8px] font-black uppercase tracking-tighter opacity-40">Queued</span>
                         </div>
                         
@@ -138,7 +144,7 @@ onUnmounted(() => {
                         </div>
 
                         <p class="text-[8px] text-muted-foreground truncate opacity-60 italic">
-                            {{ folder.sync_status === 'indexing' ? (folder.current_indexing_file || 'Processing...') : 'Waiting for system resources...' }}
+                            {{ folder.sync_status === 'queued' ? 'Waiting for system resources...' : (folder.current_indexing_file || 'Starting pipeline...') }}
                         </p>
                     </div>
                 </div>
