@@ -1,12 +1,9 @@
 <script setup lang="ts">
 import axios from 'axios';
 import {
-    FolderSearch, RefreshCcw, Send, Loader2, Bot, User,
-    FileText, Search, Database, HardDrive, Trash2, Eraser,
-    Folder, CheckCircle, ExternalLink, ScanEye, EyeOff
+    FolderSearch, Loader2, Database, HardDrive
 } from 'lucide-vue-next';
 import { ref, onMounted, nextTick, watch } from 'vue';
-import Markdown from '@/components/Markdown.vue';
 import Button from '@/components/ui/button/Button.vue';
 import Card from '@/components/ui/card/Card.vue';
 import CardContent from '@/components/ui/card/CardContent.vue';
@@ -14,14 +11,13 @@ import CardDescription from '@/components/ui/card/CardDescription.vue';
 import CardFooter from '@/components/ui/card/CardFooter.vue';
 import CardHeader from '@/components/ui/card/CardHeader.vue';
 import CardTitle from '@/components/ui/card/CardTitle.vue';
-import Input from '@/components/ui/input/Input.vue';
-import ScrollArea from '@/components/ui/scroll-area/ScrollArea.vue';
 import Select from '@/components/ui/select/Select.vue';
 import SelectContent from '@/components/ui/select/SelectContent.vue';
 import SelectItem from '@/components/ui/select/SelectItem.vue';
 import SelectTrigger from '@/components/ui/select/SelectTrigger.vue';
 import SelectValue from '@/components/ui/select/SelectValue.vue';
-import CommandInput from '@/components/CommandInput.vue';
+import SiloStatusPanel from '@/components/vantage/SiloStatusPanel.vue';
+import ChatInterface from '@/components/vantage/ChatInterface.vue';
 
 const props = defineProps<{
     vertical?: any;
@@ -360,185 +356,29 @@ const sendQuery = async () => {
 
         <!-- 2. Active State -->
         <template v-else>
-            <CardHeader class="pb-3 border-b bg-muted/10 shrink-0 rounded-t-xl overflow-hidden">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2 overflow-hidden">
-                        <div class="p-1.5 rounded-lg bg-primary/10">
-                            <Search class="h-3.5 w-3.5 text-primary" />
-                        </div>
-                        <div class="overflow-hidden">
-                            <CardTitle class="text-sm font-bold truncate">{{ currentVertical.name }}</CardTitle>
-                            <CardDescription class="text-[9px] uppercase tracking-widest font-bold opacity-60 flex items-center gap-1">
-                                <HardDrive class="h-2.5 w-2.5" />
-                                {{ currentVertical.folder?.name || 'Local' }}
-                            </CardDescription>
-                        </div>
-                    </div>
-                    <div class="flex gap-1">
-                        <Button
-                            v-if="currentVertical.folder"
-                            variant="ghost"
-                            size="icon"
-                            class="h-7 w-7 rounded-md transition-colors"
-                            :class="[
-                                currentVertical.folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground opacity-40',
-                                (currentVertical.folder.is_indexing || !visionEnabled) ? 'opacity-20 cursor-not-allowed' : ''
-                            ]"
-                            :disabled="isTogglingVisual || isSyncing || currentVertical.folder.is_indexing || !visionEnabled"
-                            @click="toggleVisual"
-                            :title="!visionEnabled ? 'Vision Intelligence is globally disabled in Settings' : (currentVertical.folder.is_indexing ? 'System busy: Finish indexing before modifying vision' : 'Toggle Visual Intelligence')"
-                        >                            <Loader2 v-if="isTogglingVisual" class="h-3 w-3 animate-spin" />
-                            <component v-else :is="currentVertical.folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isClearing || messages.length === 0" @click="clearHistory" title="Clear Conversation">
-                            <Eraser class="h-3 w-3" />
-                        </Button>
-                        <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isSyncing" @click="syncVertical" title="Re-index Folder">
-                            <RefreshCcw class="h-3 w-3" :class="{ 'animate-spin': isSyncing }" />
-                        </Button>
-                        <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md text-destructive hover:text-destructive hover:bg-destructive/10" @click="deleteVertical">
-                            <Trash2 class="h-3 w-3" />
-                        </Button>
-                    </div>
-                </div>
-            </CardHeader>
+            <SiloStatusPanel
+                :currentVertical="currentVertical"
+                :visionEnabled="visionEnabled"
+                :isTogglingVisual="isTogglingVisual"
+                :isSyncing="isSyncing"
+                :isClearing="isClearing"
+                :hasMessages="messages.length > 0"
+                @toggleVisual="toggleVisual"
+                @clearHistory="clearHistory"
+                @syncVertical="syncVertical"
+                @deleteVertical="deleteVertical"
+            />
 
-            <CardContent class="flex-1 p-0 overflow-hidden relative flex flex-col min-h-0">
-                <ScrollArea ref="scrollAreaRef" class="h-full w-full">
-                    <div class="px-4 py-4 min-h-full flex flex-col gap-4">
-                        <!-- Empty State / Introduction -->
-                        <div v-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center text-center py-12 px-6">
-                            <div class="p-4 rounded-3xl bg-primary/5 mb-4 shadow-inner">
-                                <Sparkles class="h-8 w-8 text-primary opacity-40" />
-                            </div>
-                            <h3 class="text-sm font-bold uppercase tracking-widest opacity-80 mb-2">Vantage Intelligence Active</h3>
-                            <p class="text-[11px] text-muted-foreground leading-relaxed max-w-[240px] italic mb-6">
-                                Ask anything about the documents in this silo, or use Magic Commands to command your silicon.
-                            </p>
-                            
-                            <div class="grid grid-cols-1 gap-2 w-full max-w-[280px]">
-                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
-                                    <span class="text-[10px] font-black text-primary">/help</span>
-                                    <span class="text-[9px] opacity-60 italic">See all magic commands available in this silo.</span>
-                                </div>
-                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
-                                    <span class="text-[10px] font-black text-primary">/create [filename]</span>
-                                    <span class="text-[9px] opacity-60 italic">Deep Creation: Generate files from your knowledge.</span>
-                                </div>
-                                <div class="p-2.5 rounded-xl bg-muted/30 border border-border/50 text-left flex flex-col gap-1">
-                                    <span class="text-[10px] font-black text-primary">/organize</span>
-                                    <span class="text-[9px] opacity-60 italic">Silo Structuring: Group files by thematic relevance.</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div v-for="(msg, idx) in messages" :key="msg.id || idx" class="flex flex-col gap-1">
-                            <div class="flex items-center gap-1.5 mb-1" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                                <span v-if="msg.role === 'assistant'" class="text-[9px] font-bold uppercase tracking-wider opacity-30">ARKHEIN VANTAGE</span>
-                                <span v-else class="text-[9px] font-bold uppercase tracking-wider opacity-30">USER</span>
-                            </div>
-                            <div
-                                class="text-xs p-3 rounded-2xl leading-relaxed"
-                                :class="msg.role === 'user' ? 'bg-primary text-primary-foreground ml-8 rounded-tr-none shadow-sm whitespace-pre-wrap' : 'bg-muted/50 border border-border/50 mr-8 rounded-tl-none'"
-                            >
-                                <Markdown v-if="msg.role === 'assistant'" :content="msg.content" />
-                                <template v-else>{{ msg.content }}</template>
-
-                                <!-- Pending Actions UI -->
-                                <div v-if="msg.role === 'assistant' && getActions(msg).length > 0" class="mt-4 flex flex-col gap-2">
-                                    <!-- Reasoning Block -->
-                                    <div v-if="getReasoning(msg)" class="mb-2 px-3 py-2 rounded-xl bg-primary/5 border border-primary/10 text-[10px] italic opacity-80 leading-relaxed">
-                                        <span class="font-bold uppercase not-italic text-[8px] opacity-50 block mb-1">Strategist Reasoning</span>
-                                        {{ getReasoning(msg) }}
-                                    </div>
-
-                                    <!-- Bulk Action Header -->
-                                    <div v-if="getPendingCount(msg) > 1" class="flex items-center justify-between mb-2 px-2 py-1.5 rounded-lg bg-primary/5 border border-primary/10">
-                                        <div class="flex items-center gap-2">
-                                            <div class="h-1.5 w-1.5 rounded-full bg-primary animate-pulse"></div>
-                                            <span class="text-[10px] font-bold uppercase tracking-wider text-primary/80">
-                                                {{ getPendingCount(msg) }} Operations Pending
-                                            </span>
-                                        </div>
-                                        <Button
-                                            size="sm"
-                                            variant="default"
-                                            class="h-7 text-[10px] px-4 font-bold shadow-sm"
-                                            @click="confirmAll(msg)"
-                                        >
-                                            Confirm All
-                                        </Button>
-                                    </div>
-
-                                    <div v-for="(action, aIdx) in getActions(msg)" :key="action.id || aIdx"
-                                        class="flex flex-col p-2 rounded-xl bg-background/50 border border-border/40 shadow-sm"
-                                        :class="{ 'opacity-40 grayscale-[0.5]': action.status === 'executed' }"
-                                    >
-                                        <div class="flex items-center justify-between gap-3">
-                                            <div class="flex items-center gap-2 overflow-hidden">
-                                                <div class="p-1.5 rounded-lg bg-primary/10">
-                                                    <Folder v-if="action.type === 'create_folder'" class="h-3 w-3 text-primary" />
-                                                    <FileText v-else-if="action.type === 'create_file'" class="h-3 w-3 text-primary" />
-                                                    <ExternalLink v-else class="h-3 w-3 text-primary" />
-                                                </div>
-                                                <div class="flex flex-col overflow-hidden">
-                                                    <span class="text-[10px] font-bold opacity-80 uppercase tracking-tight">{{ action.type.replace('_', ' ') }}</span>
-                                                    <span class="text-[9px] truncate opacity-60">{{ action.description }}</span>
-                                                </div>
-                                            </div>
-
-                                            <Button
-                                                v-if="action.status !== 'executed'"
-                                                size="sm"
-                                                variant="outline"
-                                                class="h-7 text-[10px] px-3 font-bold border-primary/20 hover:bg-primary/5 text-primary"
-                                                :disabled="isExecutingAction[action.id]"
-                                                @click="confirmAction(msg, action)"
-                                            >
-                                                <Loader2 v-if="isExecutingAction[action.id]" class="mr-1.5 h-3 w-3 animate-spin" />
-                                                Confirm
-                                            </Button>
-                                            <div v-else class="flex items-center gap-1.5 text-green-500 px-2">
-                                                <CheckCircle class="h-3.5 w-3.5" />
-                                                <span class="text-[10px] font-bold uppercase tracking-widest">Done</span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div v-if="isQuerying" class="flex gap-2 items-center px-1 py-2">
-                            <Loader2 class="h-3 w-3 animate-spin text-primary" />
-                            <span class="text-[9px] font-bold opacity-30 uppercase tracking-tighter">
-                                {{ messages[messages.length - 1]?.status || 'Analyzing Registry...' }}
-                            </span>
-                        </div>
-                    </div>
-                </ScrollArea>
-
-                <!-- Source Tags -->
-                <div v-if="sources.length > 0" class="px-4 py-2 border-t bg-muted/5 flex gap-1 overflow-x-auto no-scrollbar shrink-0">
-                    <div v-for="source in sources" :key="source.filename" class="px-1.5 py-0.5 rounded-md bg-background border text-[8px] whitespace-nowrap opacity-60 hover:opacity-100 transition-opacity flex items-center gap-1 shadow-sm">
-                        <FileText class="h-2.5 w-2.5" />
-                        {{ source.filename }}
-                    </div>
-                </div>
-            </CardContent>
-
-            <CardFooter class="p-3 border-t bg-background shrink-0">
-                <div class="flex w-full items-center gap-2">
-                    <CommandInput
-                        v-model="query"
-                        placeholder="Query documents... (try /help)"
-                        :disabled="isQuerying"
-                        @submit="sendQuery"
-                    />
-                    <Button size="icon" class="h-8 w-8 shrink-0 rounded-lg shadow-sm" @click="sendQuery" :disabled="!query.trim() || isQuerying">
-                        <Send class="h-3.5 w-3.5" />
-                    </Button>
-                </div>
-            </CardFooter>
+            <ChatInterface
+                :messages="messages"
+                :sources="sources"
+                :isQuerying="isQuerying"
+                :isExecutingAction="isExecutingAction"
+                v-model:queryModel="query"
+                @sendQuery="sendQuery"
+                @confirmAction="confirmAction"
+                @confirmAll="confirmAll"
+            />
         </template>
     </Card>
 </template>

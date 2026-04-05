@@ -8,6 +8,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
+use App\Services\Commands\CommandRegistry;
+use App\Services\Commands\HelpCommand;
+use App\Services\Commands\OrganizeCommand;
+use App\Services\Commands\SyncCommand;
+use App\Services\Commands\FileActionCommand;
+
 class AppServiceProvider extends ServiceProvider
 {
     /**
@@ -15,7 +21,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(CommandRegistry::class, function ($app) {
+            return new CommandRegistry([
+                $app->make(HelpCommand::class),
+                $app->make(OrganizeCommand::class),
+                $app->make(SyncCommand::class),
+                $app->make(FileActionCommand::class),
+            ]);
+        });
     }
 
     /**

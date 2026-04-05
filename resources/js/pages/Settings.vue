@@ -24,6 +24,7 @@ import {
 } from 'lucide-vue-next';
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import AppearanceTabs from '@/components/AppearanceTabs.vue';
+import ManagedFolders from '@/components/settings/ManagedFolders.vue';
 import Button from '@/components/ui/button/Button.vue';
 import Card from '@/components/ui/card/Card.vue';
 import CardContent from '@/components/ui/card/CardContent.vue';
@@ -929,118 +930,14 @@ const toggleVisual = (id: number) => {
                         </CardContent>
                     </Card>
 
-                    <Card>
-                        <CardHeader>
-                            <CardTitle
-                                class="flex items-center gap-2 text-green-600"
-                            >
-                                <ShieldCheck class="h-5 w-5" />
-                                Permissions & Managed Folders
-                            </CardTitle>
-                            <CardDescription>
-                                Arkhein only indexes files in folders you
-                                explicitly authorize here.
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent class="space-y-4">
-                            <div
-                                v-if="foldersList.length === 0"
-                                class="rounded-[1.5rem] border-2 border-dashed bg-muted/20 py-8 text-center text-sm text-muted-foreground italic"
-                            >
-                                No folders authorized. Add one to begin indexing
-                                your local archive.
-                            </div>
-                            <div v-else class="space-y-3">
-                                <div
-                                    v-for="folder in foldersList"
-                                    :key="folder.id"
-                                    class="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/30 p-4"
-                                >
-                                    <div
-                                        class="flex items-center justify-between"
-                                    >
-                                        <div
-                                            class="flex flex-col gap-0.5 overflow-hidden text-left"
-                                        >
-                                            <div
-                                                class="flex items-center gap-2"
-                                            >
-                                                <span
-                                                    class="truncate text-sm font-semibold"
-                                                    >{{ folder.name }}</span
-                                                >
-                                                <span
-                                                    v-if="folder.is_indexing"
-                                                    class="flex items-center gap-1 text-[9px] font-black text-primary uppercase"
-                                                >
-                                                    <RefreshCw
-                                                        class="h-2 w-2 animate-spin"
-                                                    />
-                                                    Indexing...
-                                                </span>
-                                            </div>
-                                            <span
-                                                class="truncate text-[10px] text-muted-foreground"
-                                                >{{ folder.path }}</span
-                                            >
-                                        </div>
-                                        <div class="flex items-center gap-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                class="h-8 w-8 rounded-xl"
-                                                :class="[
-                                                    folder.allow_visual_indexing
-                                                        ? 'bg-blue-500/10 text-blue-500'
-                                                        : 'text-muted-foreground',
-                                                    folder.is_indexing || !form.vision_enabled
-                                                        ? 'cursor-not-allowed opacity-30'
-                                                        : '',
-                                                ]"
-                                                :disabled="folder.is_indexing || !form.vision_enabled"
-                                                @click="toggleVisual(folder.id)"
-                                                :title="
-                                                    !form.vision_enabled
-                                                        ? 'Enable Vision in settings to use this feature'
-                                                        : (folder.is_indexing
-                                                            ? 'System busy: Finish indexing before modifying vision'
-                                                            : 'Toggle Visual Intelligence')
-                                                "
-                                            >
-                                                <component
-                                                    :is="
-                                                        folder.allow_visual_indexing
-                                                            ? ScanEye
-                                                            : EyeOff
-                                                    "
-                                                    class="h-4 w-4"
-                                                />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                class="h-8 w-8 rounded-xl text-red-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-900/20"
-                                                @click="removeFolder(folder.id)"
-                                            >
-                                                <Trash2 class="h-4 w-4" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="flex flex-col gap-3 pt-4">
-                                <Button
-                                    variant="outline"
-                                    class="w-full rounded-xl"
-                                    @click="addFolder"
-                                >
-                                    <FolderPlus class="mr-2 h-4 w-4" />
-                                    Authorize New Folder
-                                </Button>
-                            </div>
-                        </CardContent>
-                    </Card>
+                    <ManagedFolders 
+                        :foldersList="foldersList" 
+                        :visionEnabled="form.vision_enabled"
+                        :isBusy="isBusy"
+                        @addFolder="addFolder"
+                        @removeFolder="removeFolder"
+                        @toggleVisual="toggleVisual"
+                    />
 
                     <Card>
                         <CardHeader>

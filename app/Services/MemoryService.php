@@ -335,6 +335,8 @@ class MemoryService
     {
         try {
             File::cleanDirectory($this->basePath);
+            File::cleanDirectory(storage_path('app/arkhein/workspaces'));
+            
             Knowledge::on('nativephp')->delete();
             \App\Models\Document::on('nativephp')->delete();
             Setting::on('nativephp')->where('key', 'global_binary_hash')->delete();
@@ -387,6 +389,10 @@ class MemoryService
      */
     public function purgeFolderKnowledge(int $folderId): bool
     {
+        // 1. Purge physical workspace
+        $this->purgeWorkspace($folderId);
+
+        // 2. Purge knowledge base
         return $this->withScope($folderId, function() use ($folderId) {
             try {
                 Knowledge::on('nativephp')
@@ -404,5 +410,17 @@ class MemoryService
                 return false;
             }
         });
+    }
+
+    /**
+     * Purge physical workspace for a silo.
+     */
+    public function purgeWorkspace(int $folderId): void
+    {
+        $workspaceDir = storage_path('app/arkhein/workspaces/' . $folderId);
+        if (File::isDirectory($workspaceDir)) {
+            Log::info("Arkhein: Purging physical workspace for silo [{$folderId}]");
+            File::deleteDirectory($workspaceDir);
+        }
     }
 }

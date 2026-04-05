@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 
+use App\Services\Commands\CommandRegistry;
+
 class VerticalService
 {
     public function __construct(
@@ -16,7 +18,8 @@ class VerticalService
         protected IntentService $bouncer,
         protected ActionExtractor $worker,
         protected FileArchitectService $architect,
-        protected CognitiveArbiter $arbiter
+        protected CognitiveArbiter $arbiter,
+        protected CommandRegistry $commandRegistry
     ) {}
 
     /**
@@ -80,11 +83,14 @@ class VerticalService
         $onEvent('status', 'Initializing cognitive pipeline...');
         
         // We create a temporary task record for visibility in Earthbeat during the reasoning passes
-        $task = \App\Models\SystemTask::createInSilo(
-            $vertical->folder->id,
-            'thinking',
-            "Reasoning: {$query}"
-        );
+        $task = null;
+        if ($vertical->folder_id) {
+            $task = \App\Models\SystemTask::createInSilo(
+                $vertical->folder_id,
+                'thinking',
+                "Reasoning: {$query}"
+            );
+        }
 
         $fullResponse = $this->arbiter->process($query, $vertical->folder_id, $task);
 
@@ -154,165 +160,42 @@ class VerticalService
 
     protected function handleCommand($vertical, $intent, $query, $folderPath, $currentFiles): array
     {
-        $assistantResponse = "";
-        $pendingActions = [];
-        $reasoning = null;
-
         // 1. Initial Perception Pass (Level 1 Grounding)
         $folder = $vertical->folder;
         $schema = $folder?->environmental_schema ?? [];
-        $task = \App\Models\SystemTask::createInSilo($folder->id, 'thinking', "Magic Command: Analyzing \"{$intent}\"");
+        
+        $task = null;
+        if ($vertical->folder_id) {
+            $task = \App\Models\SystemTask::createInSilo($vertical->folder_id, 'thinking', "Magic Command: Analyzing \"{$intent}\"");
+        }
         
         $perception = $this->arbiter->processPerception($query, $schema);
 
-        switch ($intent) {
-            case 'COMMAND_HELP':
-                $assistantResponse = "### 🪄 Arkhein Magic Commands\n\n" .
-                    "- `/create [filename]` : Create a new file (uses recent context for content).\n" .
-                    "- `/move [file] [folder]` : Move a file to a subfolder.\n" .
-                    "- `/organize` : Automatically group files by their extension.\n" .
-                    "- `/delete [filename]` : Remove a file from the authorized folder.\n\n" .
-                    "You can follow commands with natural language, e.g., `/create a summary file called news.md`.";
-                $task->update(['status' => \App\Models\SystemTask::STATUS_COMPLETED, 'progress' => 100, 'description' => 'Help displayed']);
-                break;
+        $command = $this->commandRegistry->get($intent);
 
-            case 'COMMAND_CREATE':
-            case 'COMMAND_MOVE':
-            case 'COMMAND_DELETE':
-                $history = $vertical->interactions()->latest()->limit(3)->get()->reverse();
-                $context = $history->map(fn($m) => "{$m->role}: {$m->content}")->implode("\n");
-                
-                // Use the high-resolution extractor with perception grounding
-                $result = $this->worker->extract($query, $folderPath, $currentFiles, $context, $perception, $schema);
-                $pendingActions = $result['actions'];
-                $reasoning = $result['reasoning'];
-                $this->fillPlaceholders($vertical, $pendingActions);
-
-                $isDrafting = collect($pendingActions)->contains(fn($a) => ($a['params']['content'] ?? '') === 'AGENT_DRAFTING_IN_PROGRESS');
-                $isBusy = collect($pendingActions)->contains(fn($a) => ($a['params']['content'] ?? '') === 'AGENT_BUSY_TASK_ALREADY_IN_PROGRESS');
-
-                $assistantResponse = !empty($pendingActions) 
-                    ? ($isBusy 
-                        ? "I am currently processing another complex task for this folder. Please wait for the current operation to finish before starting a new one."
-                        : ($isDrafting 
-                            ? "I have started the **Document Architect** pipeline to assemble this file in the background. This is a complex task involving multiple documents; you can monitor my progress in the **System Heartbeat**."
-                            : "Command parsed. I've prepared the plan. Please confirm below."))
-                    : "I couldn't identify the specific targets for that command. Try `/create [filename]`.";
-                
-                $task->update(['status' => \App\Models\SystemTask::STATUS_COMPLETED, 'progress' => 100, 'description' => 'Command plan ready']);
-                break;
-
-            case 'COMMAND_ORGANIZE':
-                if (!$vertical->folder) {
-                    $assistantResponse = "No folder associated with this vertical to organize.";
-                    $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
-                    break;
-                }
-
-                $task->update(['description' => 'Librarian: Designing strategic organization plan']);
-
-                $result = $this->worker->extract($query, $folderPath, $currentFiles, null, $perception, $schema);
-                $pendingActions = $result['actions'];
-                $reasoning = $result['reasoning'];
-
-                $task->update([
-                    'status' => \App\Models\SystemTask::STATUS_COMPLETED,
-                    'progress' => 100,
-                    'description' => "Librarian: Strategic plan generated"
-                ]);
-
-                $assistantResponse = "The **Strategic Librarian** has analyzed your folder patterns and designed a new taxonomy. I've prepared the organization plan below. Please confirm to execute.";
-                break;
-
-            case 'COMMAND_SYNC':
-                if ($vertical->folder) {
-                    $task->update(['type' => 'sync', 'description' => "Re-indexing silo @{$vertical->folder->name}"]);
-                    \App\Jobs\IndexFolderJob::dispatch($vertical->folder, $task->id)->onConnection('background');
-                    $assistantResponse = "Re-indexing started for **{$vertical->folder->name}**. You can monitor the progress in the system monitor.";
-                } else {
-                    $assistantResponse = "No folder associated with this vertical to sync.";
-                    $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
-                }
-                break;
-
-            default:
-                $assistantResponse = "Command not recognized.";
-                $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
+        if (!$command) {
+            if ($task) $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
+            return $this->finalize($vertical, "Command not recognized.", [], [], $intent, null);
         }
 
-        return $this->finalize($vertical, $assistantResponse, $pendingActions, [], $intent, $reasoning);
-    }
-
-    protected function fillPlaceholders(Vertical $vertical, array &$actions, ?string $defaultContent = null)
-    {
-        foreach ($actions as &$action) {
-            if ($action['type'] === 'create_file' && ($action['params']['content'] ?? '') === 'PLACEHOLDER') {
-                $instruction = $action['params']['instruction'] ?? null;
-                if ($instruction) {
-                    // Check if this is an aggregate task (all, every, list of everything)
-                    $isAggregate = preg_match('/\b(all|every|complete|list of|entire)\b/i', $instruction);
-
-                    if ($isAggregate && $vertical->folder) {
-                        // Create a specific task record for this drafting operation
-                        $task = \App\Models\SystemTask::createInSilo(
-                            $vertical->folder->id,
-                            'drafting',
-                            "Drafting {$action['params']['path']}"
-                        );
-
-                        \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction, $task->id)
-                            ->onConnection('background');
-                        
-                        $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
-                    } else {
-                        $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
-                        
-                        // The 'Document Architect' Protocol: Higher density, better structure
-                        $prompt = "You are the Arkhein Document Architect.\n" .
-                                 "TASK: Draft a professional markdown document based on the provided KNOWLEDGE and INSTRUCTION.\n\n" .
-                                 "KNOWLEDGE FRAGMENTS:\n" . collect($knowledge)->map(fn($k) => "- " . $k['content'])->implode("\n\n") . "\n\n" .
-                                 "INSTRUCTION: {$instruction}\n\n" .
-                                 "RULES:\n" .
-                                 "1. Use professional, clear language.\n" .
-                                 "2. Structure with appropriate Markdown headers (##, ###).\n" .
-                                 "3. Be concise but exhaustive regarding the provided facts.\n" .
-                                 "4. Do NOT add preamble (e.g., 'Here is the file...'). Output ONLY the document content.\n\n" .
-                                 "DOCUMENT CONTENT:";
-
-                        $action['params']['content'] = $this->ollama->generate($prompt, null, [
-                            'options' => ['temperature' => 0.2, 'num_ctx' => 8192]
-                        ]);
-                    }
-                    
-                    $action['description'] = $this->actionService->describe($action['type'], $action['params']);
-                    continue;
-                }
-
-                if ($defaultContent) {
-                    $action['params']['content'] = $defaultContent;
-                } else {
-                    // Fallback to recent history if no specific instruction was extracted
-                    $candidates = $vertical->interactions()->where('role', 'assistant')->latest()->limit(10)->get();
-                    foreach ($candidates as $msg) {
-                        $meta = $msg->metadata;
-                        if (is_string($meta)) $meta = json_decode($meta, true);
-                        $intent = $meta['intent'] ?? 'CHAT';
-                        if (in_array($intent, ['COMMAND_HELP', 'CONFIRMATION', 'COMMAND_SYNC'])) continue;
-                        if (str_contains($msg->content, "Command parsed") || str_contains($msg->content, "prepared the plan")) continue;
-                        
-                        $cleanContent = preg_replace('/^### (PREVIEW|DRAFT|SUMMARY):[\s\n]*/i', '', $msg->content);
-                        $action['params']['content'] = $cleanContent;
-                        break;
-                    }
-                }
-                
-                if (($action['params']['content'] ?? '') === 'PLACEHOLDER') {
-                    $action['params']['content'] = "Arkhein Archive: No recent conversation context was found to populate this file.";
-                }
-                $action['description'] = $this->actionService->describe($action['type'], $action['params']);
-            }
+        try {
+            $result = $command->execute($vertical, $query, $perception, $currentFiles, $task ?: new \App\Models\SystemTask());
+            return $this->finalize(
+                $vertical, 
+                $result['response'], 
+                $result['actions'], 
+                [], 
+                $intent, 
+                $result['reasoning']
+            );
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error("Command execution failed: " . $e->getMessage());
+            if ($task) $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
+            return $this->finalize($vertical, "An error occurred while executing the command.", [], [], $intent, null);
         }
     }
+
+
 
     protected function finalize($vertical, $content, $actions, $knowledge, $intent, ?string $reasoning = null): array
     {

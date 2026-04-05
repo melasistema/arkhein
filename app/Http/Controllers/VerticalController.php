@@ -141,6 +141,11 @@ class VerticalController extends Controller
 
         try {
             $result = $verticalService->ask($vertical, $input);
+            
+            if ($result['response'] === "Inference engine failed. Check system log.") {
+                $result['response'] = "I am currently unable to reach the inference engine. Please check the system log.";
+            }
+
             return response()->json($result);
         } catch (\Throwable $e) {
             Log::error("Vertical Query Failed: " . $e->getMessage());

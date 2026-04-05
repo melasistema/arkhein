@@ -15,15 +15,9 @@ class ActionExtractor
  */
 public function extract(string $query, ?string $folderPath, array $currentFiles, ?string $context = null, array $perception = [], array $schema = []): array
 {
-    // 1. Specialized Case: Strategic Organization
-    if (str_contains(strtolower($query), '/organize')) {
-        return $this->extractOrganizationPlan($folderPath, $currentFiles);
-    }
-
-    // 2. WINDOWED HINTING: Only send relevant files to the SLM
+    // WINDOWED HINTING: Only send relevant files to the SLM
     $relevantFiles = $this->getRelevantHints($query, $currentFiles, $perception, $schema);
     $filesList = "- " . implode("\n- ", $relevantFiles);
-
     $tools = json_encode($this->actionService->getToolDefinitions(), JSON_PRETTY_PRINT);
         
         $system = "You are a File System Tool Worker.
@@ -90,51 +84,7 @@ public function extract(string $query, ?string $folderPath, array $currentFiles,
         }
     }
 
-    protected function extractOrganizationPlan(?string $folderPath, array $currentFiles): array
-    {
-        Log::info("Arkhein Librarian: Generating strategic organization plan.");
-
-        // 1. Taxonomy Generation pass
-        $folder = \App\Models\ManagedFolder::where('path', $folderPath)->first();
-        $schema = $folder?->environmental_schema ? json_encode($folder->environmental_schema) : "Generic files";
-
-        $taxPrompt = "You are the Arkhein Librarian. Analyze the Silo Schema and suggest 4-6 professional subfolder names to organize these files.
-        SCHEMA: {$schema}
-        Output ONLY a JSON array of folder names.";
-        
-        $taxRes = $this->ollama->generate($taxPrompt, null, ['format' => 'json']);
-        $taxonomy = json_decode($taxRes, true) ?? ['Documents', 'Data', 'Archive'];
-
-        // 2. Build the plan by classification
-        $filesList = "- " . implode("\n- ", array_slice($currentFiles, 0, 50));
-        
-        $system = "You are a File System Librarian.
-        TASK: Map files to the provided TAXONOMY.
-        
-        TAXONOMY: " . implode(', ', $taxonomy) . "
-
-        RULES:
-        1. Output ONLY JSON.
-        2. Use 'move_file' tool.
-        3. 'to' path must be 'FOLDER/FILENAME'.";
-
-        $user = "FILES TO ORGANIZE:\n{$filesList}";
-
-        $response = $this->ollama->chat([
-            ['role' => 'system', 'content' => $system],
-            ['role' => 'user', 'content' => $user]
-        ], null, ['format' => 'json']);
-
-        $data = json_decode($response, true);
-        $actions = $data['actions'] ?? $data ?? [];
-
-        return [
-            'actions' => $this->normalizeActions($actions, $folderPath, $currentFiles),
-            'reasoning' => "I've designed a strategic taxonomy (" . implode(', ', $taxonomy) . ") and mapped your files to their logical homes."
-        ];
-    }
-
-    protected function normalizeActions(array $actions, ?string $folderPath, array $currentFiles = []): array
+    public function normalizeActions(array $actions, ?string $folderPath, array $currentFiles = []): array
     {
         $normalized = [];
         $actionService = app(ActionService::class);
