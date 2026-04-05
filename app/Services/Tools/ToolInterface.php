@@ -22,9 +22,14 @@ interface ToolInterface
     public function getSchema(): array;
 
     /**
+     * Determine if this tool requires explicit operator consent before execution.
+     */
+    public function requiresOperatorConsent(): bool;
+
+    /**
      * Execute the tool logic.
      */
-    public function execute(array $params, ?ManagedFolder $folder = null): array;
+    public function execute(array $params, ?\App\Models\ManagedFolder $folder = null): array;
 
     /**
      * Return a human-friendly description of a specific planned action.

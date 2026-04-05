@@ -28,7 +28,8 @@ class IndexFolderJob implements ShouldQueue
      * Create a new job instance.
      */
     public function __construct(
-        protected ManagedFolder $folder
+        protected ManagedFolder $folder,
+        protected ?string $taskId = null
     ) {}
 
     /**
@@ -40,6 +41,14 @@ class IndexFolderJob implements ShouldQueue
          // to avoid lock contention and rebuild races.
          $this->withIndexLock(function () use ($archive, $memory) {
              Log::info("Arkhein: Starting background indexing for folder: {$this->folder->name}");
+             $task = $this->taskId ? \App\Models\SystemTask::find($this->taskId) : null;
+
+             if ($task) {
+                 $task->update([
+                     'status' => \App\Models\SystemTask::STATUS_RUNNING,
+                     'started_at' => now()
+                 ]);
+             }
 
              $this->folder->update([
                  'sync_status' => ManagedFolder::STATUS_INDEXING,
@@ -47,17 +56,29 @@ class IndexFolderJob implements ShouldQueue
              ]);
 
              try {
-                 $report = $archive->indexFolder($this->folder);
+                 $report = $archive->indexFolder($this->folder, false, $task);
 
                  // Final Global Reconciliation to ensure aggregate index is in sync
                  $dimensions = (int) \App\Models\Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
                  $memory->rebuildGlobalIndex($dimensions);
+
+                 // Level 0 Grounding: Scan the environment
+                 app(\App\Services\EnvironmentScanner::class)->scan($this->folder);
 
                  $this->folder->update([
                      'last_indexed_at' => now(),
                      'sync_status' => ManagedFolder::STATUS_IDLE,
                      'is_indexing' => false,
                  ]);
+
+                 if ($task) {
+                     $task->update([
+                         'status' => \App\Models\SystemTask::STATUS_COMPLETED,
+                         'completed_at' => now(),
+                         'progress' => 100,
+                         'description' => "Indexed {$report['files']} files"
+                     ]);
+                 }
 
                  Notification::new()
                     ->title('Archive Sync Complete')
@@ -70,6 +91,12 @@ class IndexFolderJob implements ShouldQueue
                     'sync_status' => ManagedFolder::STATUS_IDLE,
                     'is_indexing' => false
                 ]);
+                if ($task) {
+                    $task->update([
+                        'status' => \App\Models\SystemTask::STATUS_FAILED,
+                        'description' => "Error: " . $e->getMessage()
+                    ]);
+                }
                 Log::error("Arkhein: Indexing job failed for {$this->folder->name}: " . $e->getMessage());
                 throw $e;
             }

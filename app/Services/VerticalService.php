@@ -14,7 +14,8 @@ class VerticalService
         protected ActionService $actionService,
         protected IntentService $bouncer,
         protected ActionExtractor $worker,
-        protected FileArchitectService $architect
+        protected FileArchitectService $architect,
+        protected CognitiveArbiter $arbiter
     ) {}
 
     /**
@@ -39,16 +40,14 @@ class VerticalService
             return $this->handleCommand($vertical, $intent, $query, $folderPath, $currentFiles);
         }
 
-        // 3. NORMAL INTENTS (CHAT)
-        $relevantKnowledge = $this->rag->recall($query, 10, $vertical->folder_id);
-        $history = $this->getRecentHistory($vertical);
-        $assistantResponse = $this->ollama->chat($this->buildChatMessages($vertical, $query, $relevantKnowledge, $history));
+        // 3. NORMAL INTENTS (COGNITIVE CHAT)
+        $assistantResponse = $this->arbiter->process($query, $vertical->folder_id);
 
         if (empty(trim($assistantResponse))) {
             $assistantResponse = "I have processed your request.";
         }
 
-        return $this->finalize($vertical, $assistantResponse, [], $relevantKnowledge, $intent, null);
+        return $this->finalize($vertical, $assistantResponse, [], [], $intent, null);
     }
 
     /**
@@ -76,29 +75,27 @@ class VerticalService
             return;
         }
 
-        // 2. ASYNC INTENTS (RAG CHAT)
-        $onEvent('status', 'Recalling knowledge...');
-        $relevantKnowledge = $this->rag->recall($query, 10, $vertical->folder_id);
+        // 2. ASYNC INTENTS (COGNITIVE STREAM)
+        $onEvent('status', 'Initializing cognitive pipeline...');
         
-        $onEvent('sources', collect($relevantKnowledge)->map(fn($k) => ['filename' => $k['metadata']['filename'] ?? 'unknown'])->unique()->values()->all());
+        // We create a temporary task record for visibility in Earthbeat during the reasoning passes
+        $task = \App\Models\SystemTask::createInSilo(
+            $vertical->folder->id,
+            'thinking',
+            "Reasoning: {$query}"
+        );
 
-        $history = $this->getRecentHistory($vertical);
-        $messages = $this->buildChatMessages($vertical, $query, $relevantKnowledge, $history);
-
-        $fullResponse = "";
-        $onEvent('status', 'Synthesizing...');
-        
-        $this->ollama->streamChat($messages, function ($chunk) use (&$fullResponse, $onEvent) {
-            $fullResponse .= $chunk;
-            $onEvent('chunk', $chunk);
-        });
+        $fullResponse = $this->arbiter->process($query, $vertical->folder_id, $task);
 
         if (empty(trim($fullResponse))) {
             $fullResponse = "I have processed your request.";
-            $onEvent('chunk', $fullResponse);
         }
 
-        $result = $this->finalize($vertical, $fullResponse, [], $relevantKnowledge, $intent, null);
+        // For now, we output the result in one go to ensure Level 6 generation quality
+        // Future refinement: stream Level 6 specifically.
+        $onEvent('chunk', $fullResponse);
+
+        $result = $this->finalize($vertical, $fullResponse, [], [], $intent, null);
         $onEvent('completed', $result);
     }
 
@@ -193,20 +190,39 @@ class VerticalService
                 break;
 
             case 'COMMAND_ORGANIZE':
-                $orgPrompt = "Organize all files in this folder by their core topics and project names. 
-                Group documents into relevant thematic folders (e.g., 'marketing', 'interviews', 'product', 'summaries'). 
-                Ensure names are professional and consistent.";
-                
-                $result = $this->worker->extract($orgPrompt, $folderPath, $currentFiles);
+                if (!$vertical->folder) {
+                    $assistantResponse = "No folder associated with this vertical to organize.";
+                    break;
+                }
+
+                $task = \App\Models\SystemTask::createInSilo(
+                    $vertical->folder->id,
+                    'thinking',
+                    "Librarian: Designing strategic organization plan"
+                );
+
+                $result = $this->worker->extract($query, $folderPath, $currentFiles);
                 $pendingActions = $result['actions'];
                 $reasoning = $result['reasoning'];
-                $assistantResponse = "Strategic organization plan generated. I've analyzed your file topics and grouped them logically. Please confirm below.";
+
+                $task->update([
+                    'status' => \App\Models\SystemTask::STATUS_COMPLETED,
+                    'progress' => 100,
+                    'description' => "Librarian: Strategic plan generated"
+                ]);
+
+                $assistantResponse = "The **Strategic Librarian** has analyzed your folder patterns and designed a new taxonomy. I've prepared the organization plan below. Please confirm to execute.";
                 break;
 
             case 'COMMAND_SYNC':
                 if ($vertical->folder) {
-                    \App\Jobs\IndexFolderJob::dispatch($vertical->folder)->onConnection('background');
-                    $assistantResponse = "Re-indexing started for **{$vertical->folder->name}**. I will update my knowledge base shortly.";
+                    $task = \App\Models\SystemTask::createInSilo(
+                        $vertical->folder->id,
+                        'sync',
+                        "Re-indexing silo @{$vertical->folder->name}"
+                    );
+                    \App\Jobs\IndexFolderJob::dispatch($vertical->folder, $task->id)->onConnection('background');
+                    $assistantResponse = "Re-indexing started for **{$vertical->folder->name}**. You can monitor the progress in the system monitor.";
                 } else {
                     $assistantResponse = "No folder associated with this vertical to sync.";
                 }
@@ -229,14 +245,17 @@ class VerticalService
                     $isAggregate = preg_match('/\b(all|every|complete|list of|entire)\b/i', $instruction);
 
                     if ($isAggregate && $vertical->folder) {
-                        if ($vertical->folder->sync_status !== \App\Models\ManagedFolder::STATUS_IDLE) {
-                            $action['params']['content'] = "AGENT_BUSY_TASK_ALREADY_IN_PROGRESS";
-                        } else {
-                            \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction)
-                                ->onConnection('background');
-                            
-                            $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
-                        }
+                        // Create a specific task record for this drafting operation
+                        $task = \App\Models\SystemTask::createInSilo(
+                            $vertical->folder->id,
+                            'drafting',
+                            "Drafting {$action['params']['path']}"
+                        );
+
+                        \App\Jobs\DraftDocumentJob::dispatch($vertical->folder, $action['params']['path'], $instruction, $task->id)
+                            ->onConnection('background');
+                        
+                        $action['params']['content'] = "AGENT_DRAFTING_IN_PROGRESS";
                     } else {
                         $knowledge = $this->rag->recall($instruction, 15, $vertical->folder_id);
                         

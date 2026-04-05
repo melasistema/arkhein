@@ -24,7 +24,7 @@ class ArchiveService
     /** @var MediaProcessorInterface[] */
     protected array $processors = [];
     protected array $splitters = [];
-    protected array $ignoreFolders = ['.git', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
+    protected array $ignoreFolders = ['.git', '.arkhein', 'node_modules', 'vendor', 'storage', 'build', 'dist'];
     protected int $chunkSize;
     protected int $chunkOverlap = 100;
 
@@ -54,7 +54,7 @@ class ArchiveService
     /**
      * Index a specific folder (Incremental by default).
      */
-    public function indexFolder(ManagedFolder $folder, bool $forceFull = false): array
+    public function indexFolder(ManagedFolder $folder, bool $forceFull = false, ?\App\Models\SystemTask $task = null): array
     {
         if (!File::isDirectory($folder->path)) {
             return ['files' => 0, 'chunks' => 0];
@@ -80,6 +80,10 @@ class ArchiveService
             'sync_status' => ManagedFolder::STATUS_INDEXING
         ]);
 
+        if ($task) {
+            $task->update(['status' => \App\Models\SystemTask::STATUS_RUNNING]);
+        }
+
         $lastUpdateAt = microtime(true);
 
         foreach ($files as $index => $file) {
@@ -93,6 +97,14 @@ class ArchiveService
                     'indexing_progress' => $progress,
                     'current_indexing_file' => $relativePath
                 ]);
+
+                if ($task) {
+                    $task->update([
+                        'progress' => $progress,
+                        'description' => "Indexing: " . basename($relativePath)
+                    ]);
+                }
+
                 $lastUpdateAt = microtime(true);
             }
 
@@ -108,17 +120,23 @@ class ArchiveService
 
         // Phase 2: 90% -> 100% (Vektor binary rebuild)
         if ($anyChanges || $forceFull) {
+            if ($task) $task->update(['description' => 'Optimizing vector search index...', 'progress' => 95]);
+            
             $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
             $this->memory->rebuildIndex($dimensions, $folder->id, $folder);
             $this->memory->rebuildGlobalIndex($dimensions);
         }
 
+        // Phase 3: Finalize Grounding
+        $integrity = app(\App\Services\SiloIntegrityService::class);
+        
         $folder->update([
             'is_indexing' => false,
             'indexing_progress' => 0,
             'current_indexing_file' => null,
             'last_indexed_at' => now(),
-            'sync_status' => ManagedFolder::STATUS_IDLE
+            'sync_status' => ManagedFolder::STATUS_IDLE,
+            'disk_signature' => $integrity->computeSignature($folder->path)
         ]);
 
         return ['files' => $indexedFiles, 'chunks' => $totalChunks];

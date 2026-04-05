@@ -13,48 +13,55 @@ class SystemStatusController extends Controller
      */
     public function heartbeat()
     {
-        // Fetch ALL folders that have any non-idle activity
-        $activeFolders = ManagedFolder::where('sync_status', '!=', ManagedFolder::STATUS_IDLE)
-            ->get(['id', 'name', 'indexing_progress', 'current_indexing_file', 'sync_status']);
+        // Lazy Reconciliation: Check for drift on every heartbeat
+        app(\App\Services\SiloIntegrityService::class)->checkAll();
+
+        // 1. Fetch all tasks that are not in a final state
+        $activeTasks = \App\Models\SystemTask::whereIn('status', [
+            \App\Models\SystemTask::STATUS_QUEUED, 
+            \App\Models\SystemTask::STATUS_RUNNING
+        ])->orderBy('created_at', 'asc')->get();
+
+        // 2. Fetch stale folders
+        $staleFolders = ManagedFolder::where('sync_status', ManagedFolder::STATUS_STALE)->get();
 
         $isReconciling = Setting::get('system_reconcile_status') === 'running';
         
         return response()->json([
-            'is_busy' => $activeFolders->isNotEmpty() || $isReconciling,
-            'is_indexing' => $activeFolders->contains('sync_status', ManagedFolder::STATUS_INDEXING),
-            'is_drafting' => $activeFolders->contains('sync_status', 'drafting'),
+            'is_busy' => $activeTasks->isNotEmpty() || $isReconciling || $staleFolders->isNotEmpty(),
+            'is_indexing' => $activeTasks->contains('type', 'sync'),
+            'is_drafting' => $activeTasks->contains('type', 'drafting'),
+            'is_stale' => $staleFolders->isNotEmpty(),
             'is_reconciling' => $isReconciling,
-            'indexing_count' => $activeFolders->count(),
+            'task_count' => $activeTasks->count(),
             'reconcile_progress' => (int) Setting::get('system_reconcile_progress', 0),
             'details' => [
-                'folders' => $activeFolders,
-                'status_text' => $this->buildStatusText($activeFolders, $isReconciling)
+                'tasks' => $activeTasks,
+                'stale_folders' => $staleFolders,
+                'status_text' => $this->buildStatusText($activeTasks, $isReconciling, $staleFolders)
             ]
         ]);
     }
 
-    protected function buildStatusText($folders, $isReconciling): string
+    protected function buildStatusText($tasks, $isReconciling, $staleFolders = null): string
     {
+        $staleFolders = $staleFolders ?? collect();
+        
         if ($isReconciling) return "Reconciling Sovereign Memory...";
         
-        if ($folders->isNotEmpty()) {
-            $drafting = $folders->where('sync_status', 'drafting');
-            $indexing = $folders->where('sync_status', ManagedFolder::STATUS_INDEXING);
-            $queued = $folders->where('sync_status', ManagedFolder::STATUS_QUEUED);
-
-            if ($drafting->isNotEmpty()) {
-                $count = $drafting->count();
-                $name = $drafting->first()->name;
-                return $count === 1 ? "Drafting @{$name}..." : "Drafting {$count} documents...";
+        if ($tasks->isNotEmpty()) {
+            $running = $tasks->where('status', \App\Models\SystemTask::STATUS_RUNNING);
+            
+            if ($running->isNotEmpty()) {
+                $current = $running->first();
+                return $current->description . "...";
             }
 
-            if ($indexing->isNotEmpty()) {
-                $count = $indexing->count();
-                $name = $indexing->first()->name;
-                return $count === 1 ? "Indexing @{$name}..." : "Indexing {$count} silos...";
-            }
+            return "{$tasks->count()} tasks waiting in queue...";
+        }
 
-            return "{$queued->count()} tasks waiting in queue...";
+        if ($staleFolders->isNotEmpty()) {
+            return "Changes detected in " . $staleFolders->count() . " silos. Sync recommended.";
         }
 
         return "Ready";

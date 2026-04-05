@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Autonomous Silo Integrity:** Introduced `SiloIntegrityService` for lightweight drift detection via disk signatures, triggering automatic background self-healing when manual changes are detected.
+- **Self-Healing Protocol:** Implemented `HealSiloJob` to automatically purge ghost files and ingest new arrivals without operator intervention.
+- **Sovereign Coordinator:** Introduced `InventoryTool` for 100% accurate, database-backed structural queries (counts, lists), bypassing probabilistic SLM hallucinations.
+- **Sovereign Cognitive Stack:** Implemented a formal 6-level reasoning pipeline (Perception, Context, Decomposition, Scratchpad, Critique, Generation) to significantly enhance SLM accuracy and logic.
+- **System Task Registry:** Introduced a persistent `system_tasks` table and model to orchestrate and track complex, multi-item background operations with full transparency.
+- **Level 0 Grounding:** Introduced `EnvironmentScanner` to generate persistent Silo Semantic Maps, detecting naming patterns and folder purpose for high-fidelity environmental awareness.
+- **Physical Workspace Protocol:** Implemented on-disk reasoning scratchpads in internal application storage, providing a durable "Laboratory" for complex SLM calculations.
+- **High-Resolution Architect:** Implemented a multi-stage Agentic Assembly loop for the `/create` command, resolving truncation issues via per-file fact harvesting.
+- **Earthbeat Monitor v2:** Upgraded the system heartbeat into a real-time task monitor showing the entire background pipeline, including Queued, Running, and Drafting states.
+- **Cognitive Complexity Detection:** Refined Level 1 Perception to dynamically trigger physical workspaces for high-reasoning tasks.
+- **Selective Contextualization:** Optimized context injection to eliminate 'RAG Noise' by surgically providing either Manifest data or Deep fragments based on intent.
 - **Silo Guard Protocol:** Implemented mathematically absolute path traversal protection in all filesystem tools via strict boundary checking and normalization.
 - **Document Architect Protocol:** Introduced a highly structured generation protocol for the `/create` command, significantly improving file drafting quality on SLMs (Mistral/Qwen).
 - **Contextual Arbiter:** Refined intent detection to be context-aware, preventing conversational affirmative tokens (e.g., "OK") from hijacking the file execution loop.
@@ -21,14 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Controlled Vision:** Per-folder authorization for visual indexing with dedicated UI toggles in both Settings and Vantage Hub.
 - **Media Promotion Logic:** Automatic "upgrade" of presence-only records to full visual analysis when sight is authorized for a silo.
 - **High-Precision Intent Detection:** Refined the Help Dispatcher with a `PRECISION` intent to identify quantitative queries (totals, lists) and guide users toward deep Vantage analysis.
-- **Reactive System Heartbeat:** Enhanced the global status indicator with red "System Busy" pulsation for high-load states and a detailed interactive dropdown.
-- **Earthbeat Operations Monitor:** Implementation of a real-time task monitor in the heartbeat dropdown showing active/queued indexing tasks and memory sync progress.
-- **Sovereign Task Protocol:** Transitioned folder synchronization to a robust `sync_status` state machine (IDLE, QUEUED, INDEXING).
 - **MIME Type Tracking:** Added `mime_type` columns to `documents` and `knowledge` tables for improved media data tracking.
 - **Vision Model Support:** Integrated `qwen3-vl` vision model across default settings, seeder, and UI.
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
+- **Strict Tool Isolation:** Refactored `ActionExtractor` to explicitly forbid dangerous 'Move/Delete' hallucinations during file creation and blocked wildcard usage in tools.
 - **Ollama Context Expansion:** Increased default `num_ctx` to 16,384 across all intelligence modules for better long-context reasoning.
 - **Operational Protocols Refactoring:** Renamed `boundaries` to `protocols` in configuration with balanced limits (`silo_recursion_limit: 20`, `inference_timeout: 600s`).
 - **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type and implemented throttled progress updates to reduce SQLite lock contention.
@@ -45,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Processor Hijacking:** Restricted `PresenceProcessor` to ensure text and PDF files are correctly routed to deep-indexing processors.
 - **Settings Initialization (Vision):** Addressed issues with vision model selections not being correctly initialized in the UI after `migrate:fresh`.
 - **Vision Toggle Safety:** Fixed an issue where vision settings could be toggled while a folder was actively indexing, potentially causing state corruption.
+- **Model Selection UI:** Implemented `findBestMatch` in the frontend to ensure compute profile selection correctly identifies installed model variants.
 
 ## [0.0.5] - 2026-04-01
 

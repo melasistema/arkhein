@@ -16,6 +16,11 @@ class ActionExtractor
      */
     public function extract(string $query, ?string $folderPath, array $currentFiles, ?string $context = null): array
     {
+        // 1. Specialized Case: Strategic Organization
+        if (str_contains(strtolower($query), '/organize')) {
+            return $this->extractOrganizationPlan($folderPath, $currentFiles);
+        }
+
         $filesList = "- " . implode("\n- ", $currentFiles);
         $tools = json_encode($this->actionService->getToolDefinitions(), JSON_PRETTY_PRINT);
         
@@ -33,15 +38,14 @@ class ActionExtractor
           ]
         }
 
-        RULES:
-        1. Use RELATIVE PATHS ONLY.
-        2. If moving a file into a folder, the 'to' path MUST include that folder name (e.g. 'docs/paper.pdf').
-        3. If the user mentions 'this summary' or 'the content', refer to the CONTEXT provided.
-        4. Default Extension: Always use '.md' for new files unless the user explicitly requests another format. NEVER create '.pdf' files for text content.
+        CRITICAL SECURITY RULES:
+        1. NEVER use wildcards (*) in 'move_file' or 'delete_file' parameters.
+        2. NEVER move or delete source files when the user asks to '/create' a summary, list, or report.
+        3. For '/create' commands, use ONLY the 'create_file' tool.
+        4. Use RELATIVE PATHS ONLY.
         5. Deep Creation: If the user provides a specific prompt for the file content (e.g., '/create file.md with a list of features'), include that prompt in a parameter called 'instruction'.
         6. Use 'PLACEHOLDER' for any content parameters if you are creating files.
-        7. Group actions logically. If multiple files go to the same folder, only create that folder once.
-        8. Output ONLY the JSON object. No other text.";
+        7. Output ONLY the JSON object. No other text.";
 
         $example = "Example Mapping:\nRequest: '/create report.md with all interview findings'\nResponse: {\"reasoning\": \"Generating a detailed report based on interview knowledge\", \"actions\": [{\"type\":\"create_file\", \"params\":{\"path\":\"report.md\", \"content\":\"PLACEHOLDER\", \"instruction\": \"all interview findings\"}}]}";
 
@@ -82,6 +86,50 @@ class ActionExtractor
             Log::error("Arkhein ToolWorker: Exception", ['msg' => $e->getMessage()]);
             return ['actions' => [], 'reasoning' => 'An error occurred during extraction.'];
         }
+    }
+
+    protected function extractOrganizationPlan(?string $folderPath, array $currentFiles): array
+    {
+        Log::info("Arkhein Librarian: Generating strategic organization plan.");
+
+        // 1. Taxonomy Generation pass
+        $folder = \App\Models\ManagedFolder::where('path', $folderPath)->first();
+        $schema = $folder?->environmental_schema ? json_encode($folder->environmental_schema) : "Generic files";
+
+        $taxPrompt = "You are the Arkhein Librarian. Analyze the Silo Schema and suggest 4-6 professional subfolder names to organize these files.
+        SCHEMA: {$schema}
+        Output ONLY a JSON array of folder names.";
+        
+        $taxRes = $this->ollama->generate($taxPrompt, null, ['format' => 'json']);
+        $taxonomy = json_decode($taxRes, true) ?? ['Documents', 'Data', 'Archive'];
+
+        // 2. Build the plan by classification
+        $filesList = "- " . implode("\n- ", array_slice($currentFiles, 0, 50));
+        
+        $system = "You are a File System Librarian.
+        TASK: Map files to the provided TAXONOMY.
+        
+        TAXONOMY: " . implode(', ', $taxonomy) . "
+
+        RULES:
+        1. Output ONLY JSON.
+        2. Use 'move_file' tool.
+        3. 'to' path must be 'FOLDER/FILENAME'.";
+
+        $user = "FILES TO ORGANIZE:\n{$filesList}";
+
+        $response = $this->ollama->chat([
+            ['role' => 'system', 'content' => $system],
+            ['role' => 'user', 'content' => $user]
+        ], null, ['format' => 'json']);
+
+        $data = json_decode($response, true);
+        $actions = $data['actions'] ?? $data ?? [];
+
+        return [
+            'actions' => $this->normalizeActions($actions, $folderPath, $currentFiles),
+            'reasoning' => "I've designed a strategic taxonomy (" . implode(', ', $taxonomy) . ") and mapped your files to their logical homes."
+        ];
     }
 
     protected function normalizeActions(array $actions, ?string $folderPath, array $currentFiles = []): array

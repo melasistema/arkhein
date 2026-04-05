@@ -22,7 +22,8 @@ class DraftDocumentJob implements ShouldQueue
     public function __construct(
         protected ManagedFolder $folder,
         protected string $path,
-        protected string $instruction
+        protected string $instruction,
+        protected ?string $taskId = null
     ) {}
 
     /**
@@ -31,14 +32,24 @@ class DraftDocumentJob implements ShouldQueue
     public function handle(FileArchitectService $architect): void
     {
         Log::info("Arkhein Architect: Background job started", ['file' => $this->path]);
+        $task = $this->taskId ? \App\Models\SystemTask::find($this->taskId) : null;
 
         try {
             // 1. Set Status
             $this->folder->update(['sync_status' => 'drafting']);
+            if ($task) {
+                $task->update([
+                    'status' => \App\Models\SystemTask::STATUS_RUNNING,
+                    'started_at' => now()
+                ]);
+            }
 
             // 2. Run the Assembly Pipeline
-            $content = $architect->assemble($this->folder, $this->instruction, function($progress) {
+            $content = $architect->assemble($this->folder, $this->instruction, function($progress) use ($task) {
                 $this->folder->update(['current_indexing_file' => $progress]);
+                if ($task) {
+                    $task->update(['description' => $progress]);
+                }
             });
 
             // 3. Save the File
@@ -54,6 +65,15 @@ class DraftDocumentJob implements ShouldQueue
                 'current_indexing_file' => null
             ]);
 
+            if ($task) {
+                $task->update([
+                    'status' => \App\Models\SystemTask::STATUS_COMPLETED,
+                    'completed_at' => now(),
+                    'progress' => 100,
+                    'description' => "Drafted '{$this->path}'"
+                ]);
+            }
+
             Notification::new()
                 ->title('Document Assembled')
                 ->message("The file '{$this->path}' has been successfully drafted and indexed.")
@@ -63,6 +83,12 @@ class DraftDocumentJob implements ShouldQueue
 
         } catch (\Throwable $e) {
             $this->folder->update(['sync_status' => \App\Models\ManagedFolder::STATUS_IDLE]);
+            if ($task) {
+                $task->update([
+                    'status' => \App\Models\SystemTask::STATUS_FAILED,
+                    'description' => "Error: " . $e->getMessage()
+                ]);
+            }
             Log::error("Arkhein Architect: Background job failed", ['msg' => $e->getMessage()]);
             throw $e;
         }

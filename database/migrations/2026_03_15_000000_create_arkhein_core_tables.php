@@ -23,8 +23,10 @@ return new class extends Migration
             $table->id();
             $table->string('path')->unique();
             $table->string('name');
-            $table->string('sync_status')->default('idle'); // idle, queued, indexing, staleness
-            $table->boolean('is_indexing')->default(false); // Keep for legacy/backward compat if needed, but we prefer status
+            $table->string('sync_status')->default('idle'); // idle, queued, indexing, stale, drafting
+            $table->json('environmental_schema')->nullable(); // Level 0 Grounding: patterns, types, purpose
+            $table->string('disk_signature')->nullable(); // For drift detection (count + mtime)
+            $table->boolean('is_indexing')->default(false);
             $table->integer('indexing_progress')->default(0);
             $table->string('current_indexing_file')->nullable();
             $table->string('binary_hash')->nullable();
@@ -61,6 +63,20 @@ return new class extends Migration
             $table->json('embedding');
             $table->json('metadata')->nullable();
             $table->integer('importance')->default(1);
+            $table->timestamps();
+        });
+
+        // 5. System Tasks (Task Registry)
+        Schema::create('system_tasks', function (Blueprint $table) {
+            $table->uuid('id')->primary();
+            $table->string('type'); // indexing, drafting, vision, sync
+            $table->string('status')->default('queued'); // queued, running, completed, failed
+            $table->foreignId('folder_id')->nullable()->constrained('managed_folders')->nullOnDelete();
+            $table->string('description')->nullable();
+            $table->integer('progress')->default(0);
+            $table->json('metadata')->nullable(); // For roadmap, thinking blocks, errors
+            $table->timestamp('started_at')->nullable();
+            $table->timestamp('completed_at')->nullable();
             $table->timestamps();
         });
 

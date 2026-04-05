@@ -29,6 +29,7 @@ return [
         'knowledge_fragment_limit' => 500, // Max chunks per document
         'inference_timeout' => 600,        // 10 minutes for long reasoning/indexing
         'explicit_operator_consent' => true, // Human-in-the-loop requirement
+        'agent_workspace_enabled' => true,   // Allow the agent to use .arkhein/ for scratchpad
     ],
 
     /*

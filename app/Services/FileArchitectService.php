@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Document;
 use App\Models\ManagedFolder;
+use App\Models\SystemTask;
 use Illuminate\Support\Facades\Log;
 
 class FileArchitectService
@@ -14,104 +15,70 @@ class FileArchitectService
     ) {}
 
     /**
-     * Assemble a complex document using a multi-stage agentic pipeline.
+     * Assemble a complex document using the Cognitive Layer Stack.
      */
     public function assemble(ManagedFolder $folder, string $instruction, callable $onProgress = null): string
     {
-        Log::info("Arkhein Architect: Starting assembly", ['instruction' => $instruction]);
+        Log::info("Arkhein Architect: Starting Cognitive Assembly", ['instruction' => $instruction]);
 
-        // Stage 1: Target Identification (Selection)
+        // 1. THE DECONSTRUCTION LAYER (Planning)
+        if ($onProgress) $onProgress("Deconstructing instruction into strategy...");
+        $roadmap = $this->createRoadmap($instruction);
+
+        // 2. THE TARGETING LAYER
         if ($onProgress) $onProgress("Identifying target documents...");
         $targetPaths = $this->identifyTargets($folder, $instruction);
         
         if (empty($targetPaths)) {
-            Log::warning("Arkhein Architect: No target documents identified.");
             return "No relevant documents found to fulfill this instruction.";
         }
 
-        Log::info("Arkhein Architect: Targets identified", ['count' => count($targetPaths)]);
-
-        // Stage 2: Fact Harvesting (Extraction Loop)
+        // 3. THE HARVESTING LAYER (with Latent Reasoning)
         $factMap = [];
-        $targetPaths = array_values($targetPaths); // Force simple numeric indices
+        $targetPaths = array_values($targetPaths);
         foreach ($targetPaths as $index => $path) {
             $count = $index + 1;
             $total = count($targetPaths);
-            if ($onProgress) $onProgress("Harvesting data from document {$count}/{$total}...");
+            if ($onProgress) $onProgress("Harvesting data ({$count}/{$total}): " . basename($path));
             
-            $fact = $this->harvestFact($folder, $path, $instruction);
+            $fact = $this->harvestFact($folder, $path, $instruction, $roadmap);
             if ($fact) {
                 $factMap[] = $fact;
             }
         }
 
-        // Stage 3: Final Assembly (Synthesis)
-        if ($onProgress) $onProgress("Synthesizing final document...");
-        return $this->synthesize($factMap, $instruction);
+        // 4. THE ASSEMBLY LAYER (Drafting)
+        if ($onProgress) $onProgress("Drafting initial document...");
+        $initialDraft = $this->synthesize($factMap, $instruction);
+
+        // 5. THE SELF-CORRECTION LAYER (Critique & Refinement)
+        if ($onProgress) $onProgress("Verifying accuracy and refining...");
+        return $this->refine($initialDraft, $factMap, $instruction);
     }
 
     /**
-     * Use the Silo Manifest to decide which files are relevant.
+     * Layer 1: Break instruction into a roadmap.
      */
-    protected function identifyTargets(ManagedFolder $folder, string $instruction): array
+    protected function createRoadmap(string $instruction): string
     {
-        // 1. WISE HEURISTIC: If user wants 'all' files, don't ask the LLM to guess.
-        // This ensures 100% accuracy for aggregate tasks on small models.
-        if (preg_match('/\b(all|every|everything|complete list|entire)\b/i', $instruction)) {
-            Log::info("Arkhein Architect: Global task detected. Targeting all documents in silo.");
-            return Document::where('folder_id', $folder->id)->pluck('path')->all();
-        }
-
-        // 2. FOCUSED SELECTION: Ask LLM to filter if the task is specific
-        $docs = Document::where('folder_id', $folder->id)->get(['path', 'summary']);
-        $manifest = $docs->map(fn($d) => "- {$d->path} | Summary: {$d->summary}")->implode("\n");
-
-        $prompt = "You are the Arkhein Selection Agent. Based on the SILO MANIFEST and the USER INSTRUCTION, identify every file that must be read to complete the task.
-        
+        $prompt = "You are the Arkhein Metacognitive pass. 
+        TASK: Break the USER INSTRUCTION into a step-by-step data extraction strategy.
         USER INSTRUCTION: \"{$instruction}\"
         
-        SILO MANIFEST:
-        {$manifest}
+        What specific keys, patterns, or markers should we look for in each file to ensure 100% accuracy?
+        Output a 1-sentence dense strategy.";
 
-        Respond ONLY with a JSON array of strings representing the relative file paths.
-        Example: [\"file1.md\", \"folder/file2.md\"]";
-
-        $response = $this->ollama->generate($prompt, null, ['format' => 'json']);
-        
-        try {
-            $data = json_decode($response, true);
-            
-            // Handle common LLM output variations
-            if (isset($data['paths'])) $data = $data['paths'];
-            if (isset($data['files'])) $data = $data['files'];
-            if (isset($data['targets'])) $data = $data['targets'];
-
-            if (!is_array($data)) return [];
-
-            // Flat-mapping: Ensure we have strings, even if LLM returned objects like [{"path": "..."}]
-            return collect($data)->map(function($item) {
-                if (is_array($item)) {
-                    return $item['path'] ?? $item['file'] ?? $item['name'] ?? null;
-                }
-                return is_string($item) ? $item : null;
-            })->filter()->values()->all();
-
-        } catch (\Exception $e) {
-            Log::error("Arkhein Architect: Failed to parse target JSON", ['response' => $response]);
-            return [];
-        }
+        return $this->ollama->generate($prompt, null, ['options' => ['temperature' => 0.1]]);
     }
 
     /**
-     * Read a specific file and extract the requested detail.
+     * Layer 2 & 3: Fact Harvesting with Latent Reasoning.
      */
-    protected function harvestFact(ManagedFolder $folder, string $path, string $instruction): ?string
+    protected function harvestFact(ManagedFolder $folder, string $path, string $instruction, string $roadmap): ?string
     {
-        // 1. Fetch document context
         $vessel = Document::where('folder_id', $folder->id)->where('path', $path)->first();
         if (!$vessel) return null;
 
-        // 2. FETCH ALL FRAGMENTS DIRECTLY
         $fragments = \App\Models\Knowledge::on('nativephp')
             ->where('document_id', $vessel->id)
             ->orderBy('metadata->chunk_index', 'asc')
@@ -120,70 +87,101 @@ class FileArchitectService
 
         if (empty(trim($fragments))) return null;
 
-        // 3. Precise Extraction Pass
+        // Prompt includes the Roadmap (Contextual Injection) and asks for Thinking (Scratchpad)
         $prompt = "You are the Arkhein Data Miner.
-        TASK: Extract the EXACT values from the FILE CONTENT to fulfill the TARGET REQUIREMENT.
-        
+        STRATEGY: {$roadmap}
+        TARGET: \"{$instruction}\"
         FILE: {$path}
-        TARGET REQUIREMENT: \"{$instruction}\"
         
         FILE CONTENT:
         {$fragments}
 
-        RULES:
-        1. Extract specific NAMES, DATES, and DETAILS.
-        2. Do NOT use generic labels or placeholders.
-        3. One sentence maximum.
-        4. If the data is missing, respond with 'NOT_FOUND'.
-        
-        EXTRACTED DATA:";
+        INSTRUCTIONS:
+        1. First, wrap your internal analysis in <think>...</think> tags.
+        2. Then, extract the EXACT values. Do NOT summarize.
+        3. One sentence maximum. If missing, respond 'NOT_FOUND'.";
 
-        $fact = $this->ollama->generate($prompt, null, [
-            'options' => [
-                'temperature' => 0, 
-                'num_ctx' => 8192,
-                'num_predict' => 256
-            ]
+        $response = $this->ollama->generate($prompt, null, [
+            'options' => ['temperature' => 0, 'num_ctx' => 8192]
         ]);
         
+        // Strip the thinking block from the stored fact
+        $fact = preg_replace('/<think>.*?<\/think>/s', '', $response);
         $fact = trim($fact);
+
         if (str_contains(strtoupper($fact), 'NOT_FOUND') || empty($fact)) {
             return null;
         }
 
-        return "- SOURCE [{$path}]: {$fact}";
+        return "- Source [{$path}]: {$fact}";
     }
 
-    /**
-     * Combine harvested facts into a polished document.
-     */
     protected function synthesize(array $factMap, string $instruction): string
     {
         $data = implode("\n", $factMap);
-        
         $prompt = "You are the Arkhein Master Architect.
         TASK: Assemble the provided SOURCE DATA into a professional Markdown document.
-        
         USER INSTRUCTION: \"{$instruction}\"
         
         SOURCE DATA:
         {$data}
 
-        STRICT RULES:
-        1. USE THE EXACT NAMES AND DETAILS FROM THE SOURCE DATA.
-        2. NEVER USE PLACEHOLDERS like 'Primary Diagnosis' or 'Name'.
-        3. If you see 'John Doe: Hypertension' in the data, your document MUST say 'John Doe: Hypertension'.
-        4. Output ONLY the document content. No preamble.
-        5. Use a structured Markdown list or table.
+        RULES:
+        1. Use EXACT values from source data. No generic labels.
+        2. Structured Markdown format. No preamble.
+        
+        DOCUMENT CONTENT:";
+
+        return $this->ollama->generate($prompt, null, [
+            'options' => ['temperature' => 0.1, 'num_ctx' => 16384, 'num_predict' => 4096]
+        ]);
+    }
+
+    /**
+     * Layer 4: The Refinement Pass.
+     */
+    protected function refine(string $draft, array $factMap, string $instruction): string
+    {
+        $data = implode("\n", $factMap);
+        $prompt = "You are the Arkhein Quality Auditor.
+        Compare the DRAFT with the ORIGINAL DATA. 
+        
+        DRAFT:
+        {$draft}
+        
+        ORIGINAL DATA:
+        {$data}
+        
+        TASK: If the DRAFT is missing any items from ORIGINAL DATA or used generic labels instead of values, rewrite it to be 100% accurate. 
+        Otherwise, return the DRAFT exactly as is.
+        Output ONLY the final markdown content.
         
         FINAL DOCUMENT:";
 
         return $this->ollama->generate($prompt, null, [
-            'options' => [
-                'temperature' => 0.1, 
-                'num_ctx' => 16384,
-                'num_predict' => 4096 // Ensure we don't truncate long lists
-            ]
+            'options' => ['temperature' => 0, 'num_ctx' => 16384, 'num_predict' => 4096]
         ]);
+    }
+
+    protected function identifyTargets(ManagedFolder $folder, string $instruction): array
+    {
+        if (preg_match('/\b(all|every|everything|complete list|entire)\b/i', $instruction)) {
+            return Document::where('folder_id', $folder->id)->pluck('path')->all();
+        }
+
+        $docs = Document::where('folder_id', $folder->id)->get(['path', 'summary']);
+        $manifest = $docs->map(fn($d) => "- {$d->path} | Summary: {$d->summary}")->implode("\n");
+
+        $prompt = "Identify target files for: \"{$instruction}\"\nMANIFEST:\n{$manifest}\nOutput JSON array of paths.";
+        $response = $this->ollama->generate($prompt, null, ['format' => 'json']);
+        
+        try {
+            $data = json_decode($response, true);
+            if (isset($data['paths'])) $data = $data['paths'];
+            if (!is_array($data)) return [];
+            return collect($data)->map(fn($i) => is_array($i) ? ($i['path'] ?? null) : $i)->filter()->values()->all();
+        } catch (\Exception $e) {
+            return [];
+        }
     }
 }

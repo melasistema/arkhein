@@ -127,8 +127,12 @@ class SettingsController extends Controller
         }
 
         if ($needsWork) {
-            $folder->update(['sync_status' => ManagedFolder::STATUS_QUEUED]);
-            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
+            $task = \App\Models\SystemTask::createInSilo(
+                $folder->id,
+                'vision',
+                "Syncing Visual Intelligence for @{$folder->name}"
+            );
+            \App\Jobs\IndexFolderJob::dispatch($folder, $task->id)->onConnection('background');
         }
 
         return back();
@@ -139,8 +143,13 @@ class SettingsController extends Controller
         $folders = ManagedFolder::all();
         
         foreach ($folders as $folder) {
-            $folder->update(['sync_status' => ManagedFolder::STATUS_QUEUED]);
-            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
+            $task = \App\Models\SystemTask::createInSilo(
+                $folder->id,
+                'sync',
+                "Syncing @{$folder->name}"
+            );
+
+            \App\Jobs\IndexFolderJob::dispatch($folder, $task->id)->onConnection('background');
         }
 
         return back()->with([
@@ -160,14 +169,17 @@ class SettingsController extends Controller
         if ($path) {
             $folder = ManagedFolder::updateOrCreate(
                 ['path' => $path],
-                [
-                    'name' => basename($path),
-                    'sync_status' => ManagedFolder::STATUS_QUEUED
-                ]
+                ['name' => basename($path)]
+            );
+
+            $task = \App\Models\SystemTask::createInSilo(
+                $folder->id,
+                'sync',
+                "Initial indexing for @{$folder->name}"
             );
 
             // Automatically trigger indexing for the new silo
-            \App\Jobs\IndexFolderJob::dispatch($folder)->onConnection('background');
+            \App\Jobs\IndexFolderJob::dispatch($folder, $task->id)->onConnection('background');
         }
 
         return back();

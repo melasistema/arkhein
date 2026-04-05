@@ -11,9 +11,10 @@ class ToolRegistry
     public function __construct()
     {
         $this->register(new CreateFileTool());
-        $this->register(new MoveFileTool());
         $this->register(new CreateFolderTool());
+        $this->register(new MoveFileTool());
         $this->register(new DeleteFileTool());
+        $this->register(new InventoryTool());
     }
 
     public function register(ToolInterface $tool): void

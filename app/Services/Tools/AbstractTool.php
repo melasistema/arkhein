@@ -48,6 +48,11 @@ abstract class AbstractTool implements ToolInterface
         return ltrim($path, DIRECTORY_SEPARATOR);
     }
 
+    public function requiresOperatorConsent(): bool
+    {
+        return true;
+    }
+
     /**
      * Last-resort recursive search for a filename within the sandbox.
      */

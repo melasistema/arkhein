@@ -28,7 +28,7 @@ const pollInterval = ref<any>(null);
 // High-intensity state: More than 1 folder indexing or reconciling memory
 const isRedBusy = computed(() => {
     if (!heartbeat.value) return false;
-    return heartbeat.value.is_reconciling || heartbeat.value.indexing_count > 1;
+    return heartbeat.value.is_reconciling || heartbeat.value.task_count > 1 || heartbeat.value.is_stale;
 });
 
 const fetchHeartbeat = async () => {
@@ -118,33 +118,47 @@ onUnmounted(() => {
                         </div>
                     </div>
 
-                    <!-- Folder Tasks (Drafting & Indexing) -->
-                    <div v-for="folder in heartbeat.details.folders" :key="folder.id" class="p-2.5 rounded-xl bg-muted/50 border border-border/50 space-y-2">
+                    <!-- System Tasks (Full Pipeline) -->
+                    <div v-for="task in heartbeat.details.tasks" :key="task.id" class="p-2.5 rounded-xl bg-muted/50 border border-border/50 space-y-2">
                         <div class="flex items-center justify-between overflow-hidden">
                             <div class="flex items-center gap-2 overflow-hidden">
                                 <component 
-                                    :is="folder.sync_status === 'drafting' ? PenTool : (folder.sync_status === 'indexing' ? HardDrive : Clock)" 
+                                    :is="task.type === 'drafting' ? PenTool : (task.type === 'sync' || task.type === 'vision' ? HardDrive : Clock)" 
                                     class="h-3 w-3" 
                                     :class="{
-                                        'text-primary': folder.sync_status === 'drafting',
-                                        'text-blue-500': folder.sync_status === 'indexing',
-                                        'text-amber-500': folder.sync_status === 'queued'
+                                        'text-primary': task.status === 'running' && task.type === 'drafting',
+                                        'text-blue-500': task.status === 'running' && (task.type === 'sync' || task.type === 'vision'),
+                                        'text-amber-500': task.status === 'queued'
                                     }"
                                 />
-                                <span class="text-[10px] font-bold truncate uppercase">{{ folder.name }}</span>
+                                <span class="text-[10px] font-bold truncate uppercase">{{ task.description }}</span>
                             </div>
-                            <span v-if="folder.sync_status !== 'queued'" class="text-[10px] font-black opacity-40">
-                                {{ folder.sync_status === 'indexing' ? folder.indexing_progress + '%' : 'Active' }}
+                            <span v-if="task.status === 'running'" class="text-[10px] font-black opacity-40">
+                                {{ task.progress > 0 ? task.progress + '%' : 'Active' }}
                             </span>
                             <span v-else class="text-[8px] font-black uppercase tracking-tighter opacity-40">Queued</span>
                         </div>
                         
-                        <div v-if="folder.sync_status === 'indexing'" class="h-1 w-full bg-border/50 rounded-full overflow-hidden">
-                            <div class="h-full bg-blue-500 transition-all duration-500" :style="{ width: folder.indexing_progress + '%' }"></div>
+                        <div v-if="task.status === 'running' && task.progress > 0" class="h-1 w-full bg-border/50 rounded-full overflow-hidden">
+                            <div class="h-full bg-blue-500 transition-all duration-500" :style="{ width: task.progress + '%' }"></div>
                         </div>
 
-                        <p class="text-[8px] text-muted-foreground truncate opacity-60 italic">
-                            {{ folder.sync_status === 'queued' ? 'Waiting for system resources...' : (folder.current_indexing_file || 'Starting pipeline...') }}
+                        <p v-if="task.status === 'queued'" class="text-[8px] text-muted-foreground truncate opacity-60 italic">
+                            Waiting for system resources...
+                        </p>
+                    </div>
+
+                    <!-- Stale Folders (Manual Changes Detected) -->
+                    <div v-for="folder in heartbeat.details.stale_folders" :key="'stale-' + folder.id" class="p-2.5 rounded-xl bg-amber-500/5 border border-amber-500/20 space-y-2 animate-in fade-in">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <AlertCircle class="h-3 w-3 text-amber-500" />
+                                <span class="text-[10px] font-bold truncate uppercase">{{ folder.name }}</span>
+                            </div>
+                            <span class="text-[8px] font-black uppercase tracking-tighter text-amber-600">Stale</span>
+                        </div>
+                        <p class="text-[8px] text-muted-foreground leading-relaxed italic">
+                            Manual changes detected on disk. Memory sync recommended.
                         </p>
                     </div>
                 </div>
