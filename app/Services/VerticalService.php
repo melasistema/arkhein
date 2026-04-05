@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Vertical;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Str;
 
 class VerticalService
 {
@@ -157,6 +158,13 @@ class VerticalService
         $pendingActions = [];
         $reasoning = null;
 
+        // 1. Initial Perception Pass (Level 1 Grounding)
+        $folder = $vertical->folder;
+        $schema = $folder?->environmental_schema ?? [];
+        $task = \App\Models\SystemTask::createInSilo($folder->id, 'thinking', "Magic Command: Analyzing \"{$intent}\"");
+        
+        $perception = $this->arbiter->processPerception($query, $schema);
+
         switch ($intent) {
             case 'COMMAND_HELP':
                 $assistantResponse = "### 🪄 Arkhein Magic Commands\n\n" .
@@ -165,6 +173,7 @@ class VerticalService
                     "- `/organize` : Automatically group files by their extension.\n" .
                     "- `/delete [filename]` : Remove a file from the authorized folder.\n\n" .
                     "You can follow commands with natural language, e.g., `/create a summary file called news.md`.";
+                $task->update(['status' => \App\Models\SystemTask::STATUS_COMPLETED, 'progress' => 100, 'description' => 'Help displayed']);
                 break;
 
             case 'COMMAND_CREATE':
@@ -172,7 +181,9 @@ class VerticalService
             case 'COMMAND_DELETE':
                 $history = $vertical->interactions()->latest()->limit(3)->get()->reverse();
                 $context = $history->map(fn($m) => "{$m->role}: {$m->content}")->implode("\n");
-                $result = $this->worker->extract($query, $folderPath, $currentFiles, $context);
+                
+                // Use the high-resolution extractor with perception grounding
+                $result = $this->worker->extract($query, $folderPath, $currentFiles, $context, $perception, $schema);
                 $pendingActions = $result['actions'];
                 $reasoning = $result['reasoning'];
                 $this->fillPlaceholders($vertical, $pendingActions);
@@ -187,21 +198,20 @@ class VerticalService
                             ? "I have started the **Document Architect** pipeline to assemble this file in the background. This is a complex task involving multiple documents; you can monitor my progress in the **System Heartbeat**."
                             : "Command parsed. I've prepared the plan. Please confirm below."))
                     : "I couldn't identify the specific targets for that command. Try `/create [filename]`.";
+                
+                $task->update(['status' => \App\Models\SystemTask::STATUS_COMPLETED, 'progress' => 100, 'description' => 'Command plan ready']);
                 break;
 
             case 'COMMAND_ORGANIZE':
                 if (!$vertical->folder) {
                     $assistantResponse = "No folder associated with this vertical to organize.";
+                    $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
                     break;
                 }
 
-                $task = \App\Models\SystemTask::createInSilo(
-                    $vertical->folder->id,
-                    'thinking',
-                    "Librarian: Designing strategic organization plan"
-                );
+                $task->update(['description' => 'Librarian: Designing strategic organization plan']);
 
-                $result = $this->worker->extract($query, $folderPath, $currentFiles);
+                $result = $this->worker->extract($query, $folderPath, $currentFiles, null, $perception, $schema);
                 $pendingActions = $result['actions'];
                 $reasoning = $result['reasoning'];
 
@@ -216,20 +226,18 @@ class VerticalService
 
             case 'COMMAND_SYNC':
                 if ($vertical->folder) {
-                    $task = \App\Models\SystemTask::createInSilo(
-                        $vertical->folder->id,
-                        'sync',
-                        "Re-indexing silo @{$vertical->folder->name}"
-                    );
+                    $task->update(['type' => 'sync', 'description' => "Re-indexing silo @{$vertical->folder->name}"]);
                     \App\Jobs\IndexFolderJob::dispatch($vertical->folder, $task->id)->onConnection('background');
                     $assistantResponse = "Re-indexing started for **{$vertical->folder->name}**. You can monitor the progress in the system monitor.";
                 } else {
                     $assistantResponse = "No folder associated with this vertical to sync.";
+                    $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
                 }
                 break;
 
             default:
                 $assistantResponse = "Command not recognized.";
+                $task->update(['status' => \App\Models\SystemTask::STATUS_FAILED]);
         }
 
         return $this->finalize($vertical, $assistantResponse, $pendingActions, [], $intent, $reasoning);

@@ -13,6 +13,14 @@ class CognitiveArbiter
         protected FileArchitectService $architect
     ) {}
 
+    /**
+     * Expose Level 1 Perception pass for external services.
+     */
+    public function processPerception(string $query, array $schema = []): array
+    {
+        return $this->level1($query, $schema);
+    }
+
     public function process(string $query, int $folderId, ?SystemTask $task = null): string
     {
         Log::info("Arkhein Cognitive Stack: Initializing pass for query", ['query' => $query]);

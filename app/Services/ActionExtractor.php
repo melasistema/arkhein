@@ -10,18 +10,57 @@ class ActionExtractor
         protected OllamaService $ollama,
         protected ActionService $actionService
     ) {}
+/**
+ * The "High-Resolution Tool Worker" pass.
+ */
+public function extract(string $query, ?string $folderPath, array $currentFiles, ?string $context = null, array $perception = [], array $schema = []): array
+{
+    // 1. Specialized Case: Strategic Organization
+    if (str_contains(strtolower($query), '/organize')) {
+        return $this->extractOrganizationPlan($folderPath, $currentFiles);
+    }
 
-    /**
-     * The "High-Resolution Tool Worker" pass.
-     */
-    public function extract(string $query, ?string $folderPath, array $currentFiles, ?string $context = null): array
-    {
-        // 1. Specialized Case: Strategic Organization
-        if (str_contains(strtolower($query), '/organize')) {
-            return $this->extractOrganizationPlan($folderPath, $currentFiles);
+    // 2. WINDOWED HINTING: Only send relevant files to the SLM
+    $relevantFiles = $this->getRelevantHints($query, $currentFiles, $perception, $schema);
+    $filesList = "- " . implode("\n- ", $relevantFiles);
+...
+protected function getRelevantHints(string $query, array $files, array $perception, array $schema): array
+{
+    // If there are few files, send them all
+    if (count($files) <= 20) return $files;
+
+    $hints = collect();
+    $queryLower = strtolower($query);
+
+    // 1. Lexical matching (Filenames)
+    foreach ($files as $file) {
+        $base = strtolower(basename($file));
+        if (str_contains($queryLower, $base) || str_contains($base, $queryLower)) {
+            $hints->push($file);
         }
+    }
 
-        $filesList = "- " . implode("\n- ", $currentFiles);
+    // 2. Schema-aware matching (Entities)
+    foreach ($perception['entities'] ?? [] as $entity) {
+        $e = strtolower($entity);
+        foreach ($files as $file) {
+            if (str_contains(strtolower($file), $e)) {
+                $hints->push($file);
+            }
+        }
+    }
+
+    // 3. Fallback: Structural context (Top level)
+    if ($hints->count() < 10) {
+        foreach ($files as $file) {
+            if (!str_contains($file, DIRECTORY_SEPARATOR)) {
+                $hints->push($file);
+            }
+        }
+    }
+
+    return $hints->unique()->take(30)->values()->all();
+}
         $tools = json_encode($this->actionService->getToolDefinitions(), JSON_PRETTY_PRINT);
         
         $system = "You are a File System Tool Worker.

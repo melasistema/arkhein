@@ -80,7 +80,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 5. Help Module: Interactions
+        // 6. Help Module: Interactions
         Schema::create('help_interactions', function (Blueprint $table) {
             $table->id();
             $table->string('role'); // user, assistant, system
@@ -91,7 +91,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 6. Vantage Module: Verticals
+        // 7. Vantage Module: Verticals
         Schema::create('verticals', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -101,7 +101,7 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // 7. Vantage Module: Interactions
+        // 8. Vantage Module: Interactions
         Schema::create('vertical_interactions', function (Blueprint $table) {
             $table->id();
             $table->foreignId('vertical_id')->constrained()->cascadeOnDelete();
