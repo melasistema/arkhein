@@ -20,29 +20,28 @@ Deep complexity hidden behind a minimalist shell. Command your machine. Own your
 ## The Architecture of Sovereignty
 
 ### The Vantage Hub (Verticalized Intelligence)
-Arkhein does not dump your data into a single, leaking bucket. It organizes knowledge into Sovereign Silos. Every authorized folder is a unique physical partition.
+Arkhein organizes knowledge into Sovereign Silos. Every authorized folder is a unique physical partition with its own semantic grounding.
 - Silo Hierarchy: Knowledge is structured as Silo (Folder) -> Vessel (Document) -> Fragment (Chunk).
-- Parent-Aware RAG: The agent understands the document summary and subfolder depth before it reads a single fragment.
+- Level 0 Grounding: Automatic environment scanning detects naming patterns and silo purpose for high-fidelity awareness.
 - Isolated Retrieval: 100% topical isolation. Project A will never contaminate Project B.
 
-### The Mind (Local Inference)
-Powered by Ollama. Arkhein utilizes a Multi-Stage Sovereign Arbiter pipeline. It doesn't just guess; it thinks.
-- Dispatcher: A JSON-based reasoning engine that classifies query intent before triggering retrieval.
-- Polyglot Mirroring: Absolute alignment. The Archivist responds in the same language as the Operator.
-- Compute Profiles:
-  - Efficient: Optimized for 8GB-16GB RAM (Mistral + Nomic).
-  - Elite: High-precision reasoning for 32GB+ RAM (Qwen3 Suite).
+### The Mind (6-Level Cognitive Stack)
+Arkhein moves complexity out of model weights and into the process. Using a multi-pass pipeline, it enables small local models (Mistral/Qwen) to match the logic of trillion-parameter giants.
+- The Cognitive Pipeline: Perception -> Contextualization -> Decomposition -> Scratchpad -> Critique -> Generation.
+- Latent Reasoning: Hidden on-disk scratchpads in an internal laboratory allow for complex math and long-form analysis without truncation.
+- Analytical Execution: Direct database-backed structural queries (The Sovereign Coordinator) for 100% accurate file counting and inventory.
 
-### The Memory (Atomic & State-Aware)
+### The Memory (Self-Healing SSOT)
 SQLite is the ultimate Single Source of Truth. Vektor is the disposable binary accelerator.
-- Atomic Partition Scoping: Every operation is isolated via a re-entrant locking mechanism to prevent static race conditions between the UI and background workers.
-- State Integrity Hashing: Uses a `binary_hash` system to detect drift between the SQLite SSOT and the Vektor binary, eliminating redundant O(N) rebuilds.
-- Fail-Safe Stability: 5-second non-blocking locks and timeouts ensure the application remains responsive even during heavy indexing.
+- Anchored Persistence: Enriched cognitive context (Vector Anchors) is saved permanently in SQLite for robust, context-aware re-indexing.
+- Autonomous Integrity: Lightweight disk signatures detect manual filesystem changes on every heartbeat, triggering automatic background self-healing.
+- Fail-Safe Stability: Re-entrant locking and non-blocking timeouts ensure the application remains responsive during heavy background pipelines.
 
 ### The Hand (The Magic Touch)
-Arkhein commands the filesystem with surgical precision but never without the Operator's intent.
+Arkhein commands the filesystem with surgical precision, secured by the Silo Guard protocol.
 - Strategic Commands: /create, /move, /organize, /delete.
-- Guided Onboarding: "Lead-by-the-Hand" UX locks folder authorization and indexing until the necessary intelligence models are verified as installed.
+- Agentic Assembly: Multi-stage drafting for large-scale summary files, harvesting facts from dozens of documents asynchronously.
+- Silo Guard: Mathematically absolute sandbox boundaries prevent path traversal and ensure all operations remain within authorized silos.
 - Human-in-the-Loop: Every action requires a verified Strategic Plan. You remain the final authority.
 
 ## Operation Protocol
@@ -51,15 +50,16 @@ Arkhein commands the filesystem with surgical precision but never without the Op
 2. Initialize Infrastructure:
    ```bash
    composer install && npm install
-   php artisan native:migrate
+   php artisan native:migrate:fresh
    php artisan native:serve
    ```
-3. Prepare the Efficient Profile (Standard):
+3. Prepare the Intelligence (Efficient Profile):
    ```bash
    ollama pull mistral:latest
+   ollama pull qwen3-vl:latest
    ollama pull nomic-embed-text:latest
    ```
-4. Configure: Launch Arkhein. The system will self-seed target defaults and guide you through the initial model verification. Authorized your silos and monitor the System Heartbeat.
+4. Configure: Launch Arkhein. The system will auto-detect your models and guide you through the "Lead-by-the-Hand" verification. Authorize your silos and monitor the Earthbeat.
 
 ## The Sovereign Archivist
 A centralized module for global RAG and system intelligence. It is the librarian of your digital fortress. Use it to search across all authorized silos or to analyze the architecture itself.
