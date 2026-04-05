@@ -19,7 +19,8 @@ test('it initializes with an empty stream', function () {
 
 test('it persists help interactions', function () {
     Http::fake([
-        '*/api/generate' => Http::response(['response' => 'Arkhein is a local-first agent.'], 200),
+        '*/api/generate' => Http::response(['intent' => 'SYSTEM', 'thought' => 'Testing'], 200),
+        '*/api/chat' => Http::response(['message' => ['content' => 'Arkhein is a local-first agent.']], 200),
     ]);
 
     $this->get(route('help')); // Initialize for side effects

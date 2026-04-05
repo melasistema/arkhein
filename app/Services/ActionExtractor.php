@@ -23,45 +23,8 @@ public function extract(string $query, ?string $folderPath, array $currentFiles,
     // 2. WINDOWED HINTING: Only send relevant files to the SLM
     $relevantFiles = $this->getRelevantHints($query, $currentFiles, $perception, $schema);
     $filesList = "- " . implode("\n- ", $relevantFiles);
-...
-protected function getRelevantHints(string $query, array $files, array $perception, array $schema): array
-{
-    // If there are few files, send them all
-    if (count($files) <= 20) return $files;
 
-    $hints = collect();
-    $queryLower = strtolower($query);
-
-    // 1. Lexical matching (Filenames)
-    foreach ($files as $file) {
-        $base = strtolower(basename($file));
-        if (str_contains($queryLower, $base) || str_contains($base, $queryLower)) {
-            $hints->push($file);
-        }
-    }
-
-    // 2. Schema-aware matching (Entities)
-    foreach ($perception['entities'] ?? [] as $entity) {
-        $e = strtolower($entity);
-        foreach ($files as $file) {
-            if (str_contains(strtolower($file), $e)) {
-                $hints->push($file);
-            }
-        }
-    }
-
-    // 3. Fallback: Structural context (Top level)
-    if ($hints->count() < 10) {
-        foreach ($files as $file) {
-            if (!str_contains($file, DIRECTORY_SEPARATOR)) {
-                $hints->push($file);
-            }
-        }
-    }
-
-    return $hints->unique()->take(30)->values()->all();
-}
-        $tools = json_encode($this->actionService->getToolDefinitions(), JSON_PRETTY_PRINT);
+    $tools = json_encode($this->actionService->getToolDefinitions(), JSON_PRETTY_PRINT);
         
         $system = "You are a File System Tool Worker.
         Your task is to map User Requests to a strict JSON action list based on the available TOOLS.
@@ -272,5 +235,43 @@ protected function getRelevantHints(string $query, array $files, array $percepti
         // 3. Remove all non-alphanumeric characters (including spaces, dashes, dots)
         // This is a "heavy" normalization to catch variations in LLM hallucinated spaces/dashes.
         return strtolower(preg_replace('/[^a-zA-Z0-9]/', '', $str));
+    }
+
+    protected function getRelevantHints(string $query, array $files, array $perception, array $schema): array
+    {
+        // If there are few files, send them all
+        if (count($files) <= 20) return $files;
+
+        $hints = collect();
+        $queryLower = strtolower($query);
+
+        // 1. Lexical matching (Filenames)
+        foreach ($files as $file) {
+            $base = strtolower(basename($file));
+            if (str_contains($queryLower, $base) || str_contains($base, $queryLower)) {
+                $hints->push($file);
+            }
+        }
+
+        // 2. Schema-aware matching (Entities)
+        foreach ($perception['entities'] ?? [] as $entity) {
+            $e = strtolower($entity);
+            foreach ($files as $file) {
+                if (str_contains(strtolower($file), $e)) {
+                    $hints->push($file);
+                }
+            }
+        }
+
+        // 3. Fallback: Structural context (Top level)
+        if ($hints->count() < 10) {
+            foreach ($files as $file) {
+                if (!str_contains($file, DIRECTORY_SEPARATOR)) {
+                    $hints->push($file);
+                }
+            }
+        }
+
+        return $hints->unique()->take(30)->values()->all();
     }
 }

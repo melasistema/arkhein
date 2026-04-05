@@ -59,6 +59,7 @@ const props = defineProps<{
     current: {
         llm_model: string;
         vision_model: string;
+        vision_enabled: boolean;
         embedding_model: string;
         embedding_dimensions: number;
     };
@@ -235,6 +236,7 @@ onUnmounted(() => {
 const form = useForm({
     llm_model: props.current.llm_model,
     vision_model: props.current.vision_model,
+    vision_enabled: props.current.vision_enabled,
     embedding_model: props.current.embedding_model,
     embedding_dimensions: props.current.embedding_dimensions,
 });
@@ -302,8 +304,8 @@ const toggleVisual = (id: number) => {
 
     const isAlreadyEnabled = folder.allow_visual_indexing;
     const message = isAlreadyEnabled
-        ? 'Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)'
-        : 'Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes. Continue?';
+        ? 'Vision Intelligence is already active for this folder. Re-analyze all images? (High resource usage)'
+        : 'RESOURCE KILLER: Enable Vision Intelligence for this folder? Arkhein will use VL models to describe every image. This is extremely compute-intensive, will drain battery, and may take a long time. Continue?';
 
     if (!confirm(message)) return;
 
@@ -757,29 +759,56 @@ const toggleVisual = (id: number) => {
                                             </Select>
                                         </div>
 
-                                        <div class="space-y-2">
-                                            <Label for="vision_model"
-                                                >Vision Assistant Model
-                                                (Multimodal)</Label
-                                            >
-                                            <Select v-model="form.vision_model">
-                                                <SelectTrigger
-                                                    class="rounded-xl"
-                                                >
-                                                    <SelectValue
-                                                        placeholder="Select a model"
-                                                    />
-                                                </SelectTrigger>
-                                                <SelectContent>
-                                                    <SelectItem
-                                                        v-for="model in models"
-                                                        :key="model.name"
-                                                        :value="model.name"
+                                        <!-- Vision Capabilities -->
+                                        <div class="pt-2">
+                                            <div class="rounded-[2rem] border border-blue-500/20 bg-blue-500/5 p-5">
+                                                <div class="flex items-center justify-between mb-4">
+                                                    <div class="flex items-center gap-2 text-blue-600">
+                                                        <ScanEye class="h-4 w-4" />
+                                                        <span class="text-xs font-black tracking-widest uppercase">Vision Capabilities</span>
+                                                    </div>
+                                                    <Button 
+                                                        type="button"
+                                                        variant="ghost" 
+                                                        size="sm"
+                                                        class="h-8 rounded-xl px-3 gap-2"
+                                                        :class="form.vision_enabled ? 'bg-blue-500 text-white hover:bg-blue-600' : 'bg-muted/50 text-muted-foreground'"
+                                                        @click="form.vision_enabled = !form.vision_enabled"
                                                     >
-                                                        {{ model.name }}
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
+                                                        <component :is="form.vision_enabled ? ScanEye : EyeOff" class="h-3.5 w-3.5" />
+                                                        <span class="text-[10px] font-bold uppercase">{{ form.vision_enabled ? 'Active' : 'Disabled' }}</span>
+                                                    </Button>
+                                                </div>
+
+                                                <div v-if="form.vision_enabled" class="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <div class="flex gap-3 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/20">
+                                                        <AlertTriangle class="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
+                                                        <div class="space-y-1">
+                                                            <span class="text-[10px] font-black text-amber-700 uppercase leading-none">Resource Killer Notice</span>
+                                                            <p class="text-[10px] leading-relaxed text-amber-800/80">
+                                                                Vision analysis (VL) is extremely compute-intensive. Enabling this will cause Arkhein to analyze every image in authorized silos, which may significantly drain battery and increase CPU/GPU load on your Mac.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="space-y-2">
+                                                        <Label for="vision_model" class="text-[11px] font-bold opacity-70">Vision Assistant Model (VL)</Label>
+                                                        <Select v-model="form.vision_model">
+                                                            <SelectTrigger class="rounded-xl h-9 text-xs">
+                                                                <SelectValue placeholder="Select a vision model" />
+                                                            </SelectTrigger>
+                                                            <SelectContent>
+                                                                <SelectItem v-for="model in models" :key="model.name" :value="model.name">
+                                                                    {{ model.name }}
+                                                                </SelectItem>
+                                                            </SelectContent>
+                                                        </Select>
+                                                    </div>
+                                                </div>
+                                                <div v-else class="text-center py-2">
+                                                    <p class="text-[10px] text-muted-foreground italic">Vision intelligence is globally deactivated.</p>
+                                                </div>
+                                            </div>
                                         </div>
 
                                         <div class="space-y-2">
@@ -964,16 +993,18 @@ const toggleVisual = (id: number) => {
                                                     folder.allow_visual_indexing
                                                         ? 'bg-blue-500/10 text-blue-500'
                                                         : 'text-muted-foreground',
-                                                    folder.is_indexing
+                                                    folder.is_indexing || !form.vision_enabled
                                                         ? 'cursor-not-allowed opacity-30'
                                                         : '',
                                                 ]"
-                                                :disabled="folder.is_indexing"
+                                                :disabled="folder.is_indexing || !form.vision_enabled"
                                                 @click="toggleVisual(folder.id)"
                                                 :title="
-                                                    folder.is_indexing
-                                                        ? 'System busy: Finish indexing before modifying vision'
-                                                        : 'Toggle Visual Intelligence'
+                                                    !form.vision_enabled
+                                                        ? 'Enable Vision in settings to use this feature'
+                                                        : (folder.is_indexing
+                                                            ? 'System busy: Finish indexing before modifying vision'
+                                                            : 'Toggle Visual Intelligence')
                                                 "
                                             >
                                                 <component

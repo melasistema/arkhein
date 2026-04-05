@@ -62,10 +62,20 @@ class VerticalController extends Controller
         return response()->json($vertical);
     }
 
-    public function destroy(string $verticalId)
+    public function destroy(string $verticalId, \App\Services\MemoryService $memory)
     {
         $vertical = Vertical::findOrFail($verticalId);
+        $folderId = $vertical->folder_id;
+        
         $vertical->delete();
+
+        // If no more verticals reference this folder, we purge its knowledge
+        if ($folderId) {
+            $remaining = Vertical::where('folder_id', $folderId)->count();
+            if ($remaining === 0) {
+                $memory->purgeFolderKnowledge($folderId);
+            }
+        }
 
         return response()->json(['success' => true]);
     }
@@ -129,9 +139,19 @@ class VerticalController extends Controller
 
         $input = $request->input('query');
 
-        $result = $verticalService->ask($vertical, $input);
-
-        return response()->json($result);
+        try {
+            $result = $verticalService->ask($vertical, $input);
+            return response()->json($result);
+        } catch (\Throwable $e) {
+            Log::error("Vertical Query Failed: " . $e->getMessage());
+            return response()->json([
+                'interaction' => null,
+                'response' => "I am currently unable to reach the inference engine. Please check the system log.",
+                'pending_actions' => [],
+                'reasoning' => null,
+                'sources' => []
+            ]);
+        }
     }
 
     public function streamQuery(Request $request, string $verticalId, \App\Services\VerticalService $verticalService)

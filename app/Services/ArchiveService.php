@@ -159,17 +159,19 @@ class ArchiveService
             ->where('path', $relativePath)
             ->first();
 
+        $globalVisionEnabled = (bool) Setting::get('vision_enabled', false);
+
         // Smart Promotion/Demotion: 
         // Promotion: We have sight now, but only presence exists.
         $needsPromotion = $vessel && 
                          str_starts_with($mimeType, 'image/') && 
-                         $folder->allow_visual_indexing && 
+                         ($globalVisionEnabled && $folder->allow_visual_indexing) && 
                          ($vessel->metadata['is_presence_only'] ?? false);
 
         // Demotion: We revoked sight, but deep analysis chunks still exist.
         $needsDemotion = $vessel && 
                         str_starts_with($mimeType, 'image/') && 
-                        !$folder->allow_visual_indexing && 
+                        (!($globalVisionEnabled && $folder->allow_visual_indexing)) && 
                         !($vessel->metadata['is_presence_only'] ?? false);
 
         if (!$force && $vessel && $vessel->checksum === $checksum && !$needsPromotion && !$needsDemotion) {
@@ -277,7 +279,9 @@ class ArchiveService
     {
         // 1. Specialized Case: Images (Controlled Vision)
         if (str_starts_with($mimeType, 'image/')) {
-            if ($folder->allow_visual_indexing) {
+            $globalVisionEnabled = (bool) Setting::get('vision_enabled', false);
+            
+            if ($globalVisionEnabled && $folder->allow_visual_indexing) {
                 return $this->getProcessorByClass(VisualProcessor::class);
             }
             return $this->getProcessorByClass(PresenceProcessor::class);

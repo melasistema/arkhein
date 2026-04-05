@@ -61,6 +61,7 @@ class SettingsController extends Controller
         }
 
         $currentDimensions = (int) Setting::get('embedding_dimensions', $recommendedDimensions);
+        $visionEnabled = (bool) Setting::get('vision_enabled', false);
 
         // 3. Determine if the current setup matches the "Optimized" Arkhein state
         $clean = fn($m) => str_replace(':latest', '', $m);
@@ -88,6 +89,7 @@ class SettingsController extends Controller
             'current' => [
                 'llm_model' => $currentLLM,
                 'vision_model' => $currentVision,
+                'vision_enabled' => $visionEnabled,
                 'embedding_model' => $currentEmbedding,
                 'embedding_dimensions' => $currentDimensions,
             ]
@@ -219,6 +221,8 @@ class SettingsController extends Controller
             'llm_model' => 'required|string',
             'embedding_model' => 'required|string',
             'embedding_dimensions' => 'required|integer|min:32|max:4096',
+            'vision_model' => 'nullable|string',
+            'vision_enabled' => 'boolean',
         ]);
 
         $oldModel = Setting::get('embedding_model');
@@ -227,6 +231,8 @@ class SettingsController extends Controller
         Setting::set('llm_model', $request->llm_model);
         Setting::set('embedding_model', $request->embedding_model);
         Setting::set('embedding_dimensions', $request->embedding_dimensions);
+        Setting::set('vision_model', $request->vision_model);
+        Setting::set('vision_enabled', $request->vision_enabled);
 
         // If embeddings changed, we MUST reset memory to avoid corruption and dimension mismatch
         if ($oldModel !== $request->embedding_model || $oldDimensions !== (int) $request->embedding_dimensions) {

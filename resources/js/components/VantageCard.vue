@@ -26,6 +26,7 @@ import CommandInput from '@/components/CommandInput.vue';
 const props = defineProps<{
     vertical?: any;
     managedFolders: any[];
+    visionEnabled?: boolean;
 }>();
 
 const emit = defineEmits(['created', 'deleted']);
@@ -207,14 +208,13 @@ const toggleVisual = async () => {
 
     const folder = currentVertical.value.folder;
     const isAlreadyEnabled = folder.allow_visual_indexing;
-    
+
     // Elegant Confirmation Flow
-    const message = isAlreadyEnabled 
-        ? "Vision Intelligence is already active for this folder. Would you like to re-analyze all images? (Compute intensive)"
-        : "Enable Vision Intelligence? Arkhein will use qwen3-vl to describe every image in this folder. This operation is compute-intensive and may take several minutes depending on folder size. Continue?";
+    const message = isAlreadyEnabled
+        ? "Vision Intelligence is already active for this folder. Re-analyze all images? (High resource usage)"
+        : "RESOURCE KILLER: Enable Vision Intelligence for this folder? Arkhein will use VL models to describe every image. This is extremely compute-intensive and will significantly drain battery. Continue?";
 
     if (!confirm(message)) return;
-
     isTogglingVisual.value = true;
     try {
         const folderId = folder.id;
@@ -375,20 +375,19 @@ const sendQuery = async () => {
                         </div>
                     </div>
                     <div class="flex gap-1">
-                        <Button 
+                        <Button
                             v-if="currentVertical.folder"
-                            variant="ghost" 
-                            size="icon" 
-                            class="h-7 w-7 rounded-md transition-colors" 
+                            variant="ghost"
+                            size="icon"
+                            class="h-7 w-7 rounded-md transition-colors"
                             :class="[
                                 currentVertical.folder.allow_visual_indexing ? 'text-blue-500 bg-blue-500/10' : 'text-muted-foreground opacity-40',
-                                currentVertical.folder.is_indexing ? 'opacity-20 cursor-not-allowed' : ''
+                                (currentVertical.folder.is_indexing || !visionEnabled) ? 'opacity-20 cursor-not-allowed' : ''
                             ]"
-                            :disabled="isTogglingVisual || isSyncing || currentVertical.folder.is_indexing" 
-                            @click="toggleVisual" 
-                            :title="currentVertical.folder.is_indexing ? 'System busy: Finish indexing before modifying vision' : 'Toggle Visual Intelligence'"
-                        >
-                            <Loader2 v-if="isTogglingVisual" class="h-3 w-3 animate-spin" />
+                            :disabled="isTogglingVisual || isSyncing || currentVertical.folder.is_indexing || !visionEnabled"
+                            @click="toggleVisual"
+                            :title="!visionEnabled ? 'Vision Intelligence is globally disabled in Settings' : (currentVertical.folder.is_indexing ? 'System busy: Finish indexing before modifying vision' : 'Toggle Visual Intelligence')"
+                        >                            <Loader2 v-if="isTogglingVisual" class="h-3 w-3 animate-spin" />
                             <component v-else :is="currentVertical.folder.allow_visual_indexing ? ScanEye : EyeOff" class="h-3 w-3" />
                         </Button>
                         <Button variant="ghost" size="icon" class="h-7 w-7 rounded-md" :disabled="isClearing || messages.length === 0" @click="clearHistory" title="Clear Conversation">

@@ -21,11 +21,13 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 const localVerticals = ref([...props.verticals]);
 const managedFolders = ref<any[]>([]);
+const visionEnabled = ref(false);
 
 onMounted(async () => {
     // Fetch authorized folders for new cards
     const res = await axios.get('/settings'); 
     managedFolders.value = res.data.folders || [];
+    visionEnabled.value = res.data.current?.vision_enabled || false;
 });
 
 const addNewCard = () => {
@@ -72,6 +74,7 @@ const handleDeleted = (id: number) => {
                     :key="vertical ? vertical.id : 'new-' + index"
                     :vertical="vertical"
                     :managed-folders="managedFolders"
+                    :vision-enabled="visionEnabled"
                     @created="(v) => handleCreated(v, index)"
                     @deleted="handleDeleted"
                 />
