@@ -244,12 +244,20 @@ class VerticalService
         $ctx = "### RELEVANT FRAGMENTS (DEEP DETAILS):\n";
         $currentSource = '';
         foreach ($knowledge as $item) { 
-            $sourceName = $item['metadata']['filename'] ?? 'unknown';
-            $subfolder = $item['vessel']['subfolder'] ?? '';
-            $summary = $item['vessel']['summary'] ?? '';
+            $vessel = $item['vessel'] ?? [];
+            $sourceName = $vessel['filename'] ?? 'unknown';
+            $subfolder = $vessel['subfolder'] ?? '';
+            $summary = $vessel['summary'] ?? '';
+            $perception = $vessel['perception'] ?? [];
+            $docType = $perception['document_type'] ?? 'GENERAL';
 
             if ($currentSource !== $sourceName) {
-                $ctx .= "--- SOURCE: " . ($subfolder ? "{$subfolder} > " : "") . "{$sourceName} ---\n";
+                $ctx .= "--- SOURCE: " . ($subfolder ? "{$subfolder} > " : "") . "{$sourceName} [TYPE: {$docType}] ---\n";
+                
+                if (!empty($perception['extracted_metadata'])) {
+                    $ctx .= "STRUCTURED DATA: " . json_encode($perception['extracted_metadata']) . "\n";
+                }
+
                 if ($summary) $ctx .= "DOCUMENT SUMMARY: {$summary}\n";
                 $currentSource = $sourceName;
             }

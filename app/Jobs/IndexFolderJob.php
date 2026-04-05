@@ -39,7 +39,7 @@ class IndexFolderJob implements ShouldQueue
      {
          // SQLite + Vektor are not concurrency-friendly. We serialize indexing runs
          // to avoid lock contention and rebuild races.
-         $this->withIndexLock(function () use ($archive, $memory) {
+         $archive->withIndexLock(function () use ($archive, $memory) {
              Log::info("Arkhein: Starting background indexing for folder: {$this->folder->name}");
              $task = $this->taskId ? \App\Models\SystemTask::find($this->taskId) : null;
 
@@ -101,29 +101,5 @@ class IndexFolderJob implements ShouldQueue
                 throw $e;
             }
         });
-    }
-
-    protected function withIndexLock(callable $callback): void
-    {
-        $dir = storage_path('app/arkhein');
-        File::ensureDirectoryExists($dir);
-
-        $lockPath = $dir . DIRECTORY_SEPARATOR . 'indexing.lock';
-        $handle = fopen($lockPath, 'c');
-
-        if ($handle === false) {
-            throw new \RuntimeException('Failed to create/open indexing lock file.');
-        }
-
-        try {
-            if (!flock($handle, LOCK_EX)) {
-                throw new \RuntimeException('Failed to acquire indexing lock.');
-            }
-
-            $callback();
-        } finally {
-            flock($handle, LOCK_UN);
-            fclose($handle);
-        }
     }
 }

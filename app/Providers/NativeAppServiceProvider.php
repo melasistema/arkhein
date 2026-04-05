@@ -15,6 +15,7 @@ class NativeAppServiceProvider implements ProvidesPhpIni
     {
         // 1. Ensure internal storage structure exists
         \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/arkhein/workspaces'), 0777);
+        \Illuminate\Support\Facades\File::ensureDirectoryExists(storage_path('app/arkhein/workflows'), 0777);
 
         Window::open()
             ->title('Arkhein Assistant')

@@ -115,9 +115,10 @@ class CognitiveArbiter
                     SynthesisStep::class
                 ];
             } else {
-                // Fast-track: Simple queries bypass decomposition and critique
-                $payload->scratchpad = $payload->context; // Pass context directly as scratchpad input for synthesis
+                // Fast-track: Simple queries bypass decomposition and critique, 
+                // but we keep ReasoningStep if we want to maintain the scratchpad awareness/logic
                 $remainingSteps = [
+                    ReasoningStep::class,
                     SynthesisStep::class
                 ];
             }

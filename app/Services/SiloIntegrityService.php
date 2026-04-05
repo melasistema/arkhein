@@ -15,17 +15,24 @@ class SiloIntegrityService
     {
         if (!File::isDirectory($path)) return null;
 
+        $start = microtime(true);
+
         // Signature = Total Files + Last Modified Time of the root folder
-        // This is extremely fast even for large folders.
         $files = File::allFiles($path);
         $count = count($files);
         $mtime = filemtime($path);
+
+        $duration = microtime(true) - $start;
+        if ($duration > 0.5) {
+            Log::warning("Arkhein Integrity: Slow disk scan for {$path} (" . number_format($duration, 2) . "s)");
+        }
 
         return md5("{$count}|{$mtime}");
     }
 
     /**
      * Check all authorized folders for drift and mark them as stale if needed.
+     * Throttled to run at most once every 60 seconds per silo.
      */
     public function checkAll(): array
     {
@@ -33,11 +40,18 @@ class SiloIntegrityService
         $drifted = [];
 
         foreach ($folders as $folder) {
-            // Skip folders that are already doing something
+            // 1. Skip folders that are already busy
             if ($folder->sync_status !== ManagedFolder::STATUS_IDLE) continue;
+
+            // 2. Throttle: Only check disk integrity once every 60 seconds
+            $cacheKey = "integrity_check_{$folder->id}";
+            if (\Illuminate\Support\Facades\Cache::has($cacheKey)) continue;
 
             $currentSignature = $this->computeSignature($folder->path);
             
+            // Set throttle lock
+            \Illuminate\Support\Facades\Cache::put($cacheKey, true, now()->addSeconds(60));
+
             if ($currentSignature && $currentSignature !== $folder->disk_signature) {
                 Log::info("Arkhein Integrity: Drift detected for @{$folder->name}. Launching Self-Heal.");
                 

@@ -17,16 +17,13 @@ class ReasoningStep
         $intent = strtolower($payload->perception['intent'] ?? '');
         $complexity = strtolower($payload->perception['complexity'] ?? 'low');
         
-        $isWorkspaceEnabled = config('arkhein.protocols.agent_workspace_enabled', false);
+        $isWorkspaceEnabled = (bool) config('arkhein.protocols.agent_workspace_enabled', false);
         
-        // WISE OVERRIDE: If the user says "all", "list", "every", or "count", it IS complex.
-        $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything)\b/i', $payload->query);
-        
-        $isComplex = (in_array($intent, ['quantitative', 'structural', 'creative']) || $complexity === 'high' || $hasHighIntensityKeywords);
+        // We always prioritize the Physical Workspace if enabled and we have a silo context.
+        // This maintains the "Laboratory" protocol where reasoning is durable on disk.
+        $usePhysical = $isWorkspaceEnabled && $payload->folder;
 
-        $usePhysical = $isWorkspaceEnabled && $isComplex;
-
-        if ($usePhysical && $payload->folder) {
+        if ($usePhysical) {
             if ($payload->task) $payload->task->update(['description' => 'Thinking deeply in physical workspace...']);
             $payload->scratchpad = $this->physicalScratchpad($payload);
         } else {
@@ -51,10 +48,12 @@ class ReasoningStep
 
         Log::info("Arkhein Laboratory: Working on physical scratchpad", ['path' => $scratchpadPath]);
 
+        $planStr = $payload->plan ?: "Perform deep analysis of the context to answer the user query accurately.";
+
         $prompt = "You are the Arkhein Analytical Agent.
         {$priorState}
         TASK: Perform the following PLAN using the provided CONTEXT.
-        PLAN: {$payload->plan}
+        PLAN: {$planStr}
         CONTEXT: {$payload->context}
         
         INSTRUCTIONS:
@@ -79,8 +78,10 @@ class ReasoningStep
             ? "MANDATE: The user is asking for a count or total. You MUST perform this math/count NOW using the provided context and manifest. Extract every matching item and sum them up. Deliver the FINAL VALUES."
             : "";
 
+        $planStr = $payload->plan ?: "Answer the user query based on the context.";
+
         $prompt = "Level 4 (Reasoning): Think step-by-step through the plan using the context.
-        PLAN: {$payload->plan}
+        PLAN: {$planStr}
         CONTEXT: {$payload->context}
         {$analyticalRule}
         

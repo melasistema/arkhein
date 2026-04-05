@@ -30,7 +30,8 @@ class ArchiveService
 
     public function __construct(
         protected OllamaService $ollama,
-        protected MemoryService $memory
+        protected MemoryService $memory,
+        protected DocumentPerceptionService $perceptionEngine
     ) {
         $this->chunkSize = config('arkhein.vantage.chunk_size', 1000);
         $this->registerDefaultProcessors();
@@ -49,6 +50,34 @@ class ArchiveService
     {
         $this->splitters['md'] = new MarkdownSplitter();
         $this->splitters['default'] = new StandardSplitter();
+    }
+
+    /**
+     * SQLite + Vektor are not concurrency-friendly. We serialize indexing runs
+     * to avoid lock contention and rebuild races.
+     */
+    public function withIndexLock(callable $callback): mixed
+    {
+        $dir = storage_path('app/arkhein');
+        File::ensureDirectoryExists($dir);
+
+        $lockPath = $dir . DIRECTORY_SEPARATOR . 'indexing.lock';
+        $handle = fopen($lockPath, 'c');
+
+        if ($handle === false) {
+            throw new \RuntimeException('Failed to create/open indexing lock file.');
+        }
+
+        try {
+            if (!flock($handle, LOCK_EX)) {
+                throw new \RuntimeException('Failed to acquire indexing lock.');
+            }
+
+            return $callback();
+        } finally {
+            flock($handle, LOCK_UN);
+            fclose($handle);
+        }
     }
 
     /**
@@ -151,7 +180,10 @@ class ArchiveService
 
         $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
         $mimeType = File::mimeType($filePath);
-        $relativePath = str_replace($folder->path . DIRECTORY_SEPARATOR, '', $filePath);
+        
+        // Normalize path calculation to avoid issues with trailing slashes in ManagedFolder path
+        $folderPath = rtrim($folder->path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+        $relativePath = str_replace($folderPath, '', $filePath);
         $checksum = md5_file($filePath);
 
         // 1. Vessel Incremental Check
@@ -194,32 +226,60 @@ class ArchiveService
             return ['chunks' => 0];
         }
 
+        // 3.5. Cognitive Perception Pass (SLM-driven semantic understanding)
+        // We only do this if it's not a generic presence acknowledgement
+        $perception = [];
+        if (!($processor instanceof PresenceProcessor)) {
+            $perception = $this->perceptionEngine->perceive($content, basename($filePath), $extension, $folder->id);
+        }
+
         // 4. Prepare Vessel (Document)
+        // We re-verify existence just in case a concurrent process (like Self-Healing) 
+        // finished during the slow SLM perception step.
         if (!$vessel) {
-            $vessel = Document::create([
-                'folder_id' => $folder->id,
-                'path' => $relativePath,
-                'filename' => basename($filePath),
-                'extension' => $extension,
-                'mime_type' => $mimeType,
-                'checksum' => $checksum,
-                'metadata' => array_merge($result->metadata, [
-                    'depth' => count(explode(DIRECTORY_SEPARATOR, $relativePath)),
-                    'subfolder' => dirname($relativePath) === '.' ? '' : dirname($relativePath)
-                ])
-            ]);
-        } else {
+            $vessel = Document::where('folder_id', $folder->id)
+                ->where('path', $relativePath)
+                ->first();
+        }
+
+        if (!$vessel) {
+            try {
+                $vessel = Document::create([
+                    'folder_id' => $folder->id,
+                    'path' => $relativePath,
+                    'filename' => basename($filePath),
+                    'extension' => $extension,
+                    'mime_type' => $mimeType,
+                    'checksum' => $checksum,
+                    'last_indexed_at' => now(),
+                    'metadata' => array_merge($result->metadata, [
+                        'depth' => count(explode(DIRECTORY_SEPARATOR, $relativePath)),
+                        'subfolder' => dirname($relativePath) === '.' ? '' : dirname($relativePath),
+                        'perception' => $perception
+                    ])
+                ]);
+            } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+                // Last-second collision; fetch the winner.
+                $vessel = Document::where('folder_id', $folder->id)
+                    ->where('path', $relativePath)
+                    ->first();
+                
+                if (!$vessel) throw $e; // Should not happen but for safety
+            }
+        }
+
+        if ($vessel && !$vessel->wasRecentlyCreated) {
             $vessel->fragments()->delete();
             $vessel->update([
                 'checksum' => $checksum, 
                 'mime_type' => $mimeType,
                 'last_indexed_at' => now(),
-                'metadata' => array_merge($vessel->metadata ?? [], $result->metadata)
+                'metadata' => array_merge($vessel->metadata ?? [], $result->metadata, ['perception' => $perception])
             ]);
         }
 
         // 5. High-Level Summary
-        $summary = $result->summary;
+        $summary = $result->summary ?: ($perception['semantic_summary'] ?? null);
         if (!$summary && strlen($content) > 2000) {
             $summary = $this->generateSummary($content);
         }
@@ -236,7 +296,7 @@ class ArchiveService
 
         foreach ($rawChunks as $index => $chunk) {
             // Anchor the fragment to its parent context for mathematically superior retrieval
-            $fragment = CognitiveFragment::make($chunk, $vessel->summary ?? 'No summary available', $relativePath);
+            $fragment = CognitiveFragment::make($chunk, $vessel->summary ?? 'No summary available', $relativePath, $perception);
             
             // We use the 'vectorAnchor' (enriched text) for the embedding calculation
             $embedding = $this->ollama->embeddings($fragment->vectorAnchor, $embeddingModel);
@@ -248,12 +308,8 @@ class ArchiveService
                     $embedding,
                     $result->type,
                     [
-                        'path' => $relativePath,
-                        'filename' => $vessel->filename,
                         'chunk_index' => $index,
                         'total_chunks' => count($rawChunks),
-                        'folder_id' => $folder->id,
-                        'folder_name' => $folder->name,
                     ],
                     true, // skipIndex: bulk mode
                     $vessel->id,

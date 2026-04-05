@@ -336,6 +336,7 @@ class MemoryService
         try {
             File::cleanDirectory($this->basePath);
             File::cleanDirectory(storage_path('app/arkhein/workspaces'));
+            File::cleanDirectory(storage_path('app/arkhein/workflows'));
             
             Knowledge::on('nativephp')->delete();
             \App\Models\Document::on('nativephp')->delete();
@@ -373,10 +374,14 @@ class MemoryService
                     'content' => $item->content,
                     'score' => $similarity,
                     'metadata' => $item->metadata,
+                    'vector_anchor' => $item->vector_anchor, // Expose anchor for precision RAG
                     'vessel' => $item->document ? [
+                        'path' => $item->document->path,
+                        'filename' => $item->document->filename,
                         'summary' => $item->document->summary,
                         'subfolder' => $item->document->metadata['subfolder'] ?? '',
                         'depth' => $item->document->metadata['depth'] ?? 0,
+                        'perception' => $item->document->metadata['perception'] ?? [],
                     ] : null
                 ];
             }
@@ -389,8 +394,9 @@ class MemoryService
      */
     public function purgeFolderKnowledge(int $folderId): bool
     {
-        // 1. Purge physical workspace
+        // 1. Purge physical workspace and workflows
         $this->purgeWorkspace($folderId);
+        $this->purgeWorkflows($folderId);
 
         // 2. Purge knowledge base
         return $this->withScope($folderId, function() use ($folderId) {
@@ -421,6 +427,18 @@ class MemoryService
         if (File::isDirectory($workspaceDir)) {
             Log::info("Arkhein: Purging physical workspace for silo [{$folderId}]");
             File::deleteDirectory($workspaceDir);
+        }
+    }
+
+    /**
+     * Purge physical workflows for a silo.
+     */
+    public function purgeWorkflows(int $folderId): void
+    {
+        $workflowDir = storage_path('app/arkhein/workflows/' . $folderId);
+        if (File::isDirectory($workflowDir)) {
+            Log::info("Arkhein: Purging physical workflows for silo [{$folderId}]");
+            File::deleteDirectory($workflowDir);
         }
     }
 }

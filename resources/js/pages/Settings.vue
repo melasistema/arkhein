@@ -224,6 +224,22 @@ const stopPolling = () => {
     }
 };
 
+const purgeCot = async () => {
+    if (isBusy.value) return;
+
+    if (!confirm("Are you sure? This will delete all 'Chain of Thought' files (workflows and workspaces) from your local drive. This cannot be undone, but will not affect your database or vector memory.")) {
+        return;
+    }
+
+    try {
+        await axios.post('/settings/purge-cot');
+        alert("Physical Laboratory reasoning logs purged successfully.");
+    } catch (e) {
+        console.error('Purge failed', e);
+        alert("Failed to purge laboratory logs.");
+    }
+};
+
 onMounted(() => {
     if (isAnyFolderIndexing.value || isRebuilding.value) {
         startPolling();
@@ -1061,6 +1077,55 @@ const toggleVisual = (id: number) => {
                                             >path:
                                             storage/app/vektor/vector.bin</span
                                         >
+                                    </div>
+                                </div>
+
+                                <!-- Physical Laboratory Card -->
+                                <div
+                                    class="flex flex-col gap-3 rounded-2xl border border-border/50 bg-muted/40 p-4"
+                                >
+                                    <div
+                                        class="flex items-center justify-between"
+                                    >
+                                        <div class="flex items-center gap-2">
+                                            <div
+                                                class="rounded-lg bg-green-500/10 p-1.5 text-green-600 dark:text-green-400"
+                                            >
+                                                <BrainCircuit class="h-4 w-4" />
+                                            </div>
+                                            <span
+                                                class="text-xs font-bold tracking-wider uppercase"
+                                                >Physical Laboratory</span
+                                            >
+                                        </div>
+                                        <span
+                                            class="rounded-full bg-green-500/10 px-2 py-0.5 font-mono text-[10px] text-green-600"
+                                            >Chain of Thought</span
+                                        >
+                                    </div>
+                                    <div class="flex flex-col gap-1">
+                                        <span
+                                            class="text-[10px] leading-relaxed text-muted-foreground"
+                                        >
+                                            Detailed markdown logs of Arkhein's internal reasoning and ingestion workflows.
+                                        </span>
+                                        <span
+                                            class="truncate font-mono text-[9px] text-muted-foreground opacity-60"
+                                            >path:
+                                            storage/app/arkhein/</span
+                                        >
+                                    </div>
+                                    <div class="pt-2">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            class="h-8 w-full rounded-xl border border-red-500/20 bg-red-500/5 text-xs text-red-600 hover:bg-red-500/10 hover:text-red-700"
+                                            @click="purgeCot"
+                                            :disabled="isBusy"
+                                        >
+                                            <Trash2 class="mr-2 h-3 w-3" />
+                                            Purge Chain of Thought
+                                        </Button>
                                     </div>
                                 </div>
 

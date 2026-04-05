@@ -8,10 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Liquid Cognitive Pipeline:** Replaced the rigid reasoning stack with a dynamic Laravel Pipeline architecture, allowing simple queries to bypass heavy reasoning steps for maximum efficiency.
+- **Semantic Perception Layer:** Introduced `DocumentPerceptionService` to autonomously classify documents (e.g., INVOICE, CONTRACT) and extract structured metadata during ingestion.
+- **Stateful Reasoning:** Enabled iterative thinking by allowing the reasoning pipeline to read and evolve existing physical scratchpads in the laboratory.
+- **Command Bus Architecture:** Decentralized Magic Command orchestration via a declarative `CommandRegistry` and autonomous command classes (`Create`, `Organize`, `Sync`, etc.).
+- **Global Vision Control:** Added a global kill-switch for Vision Intelligence with prominent "Resource Killer" warnings to manage compute expectations.
+- **Modular Frontend Architecture:** Deconstructed monolithic Vue components (`VantageCard`, `Settings`) into specialized, reusable UI modules (`ChatInterface`, `SiloStatusPanel`, `ManagedFolders`, etc.).
+- **Data-Aware RAG Anchoring:** Enhanced `vector_anchor` logic to incorporate semantic document nature and extracted metadata, enabling precise retrieval even on small SLMs.
 - **Autonomous Silo Integrity:** Introduced `SiloIntegrityService` for lightweight drift detection via disk signatures, triggering automatic background self-healing when manual changes are detected.
 - **Self-Healing Protocol:** Implemented `HealSiloJob` to automatically purge ghost files and ingest new arrivals without operator intervention.
 - **Sovereign Coordinator:** Introduced `InventoryTool` for 100% accurate, database-backed structural queries (counts, lists), bypassing probabilistic SLM hallucinations.
-- **Sovereign Cognitive Stack:** Implemented a formal 6-level reasoning pipeline (Perception, Context, Decomposition, Scratchpad, Critique, Generation) to significantly enhance SLM accuracy and logic.
+- **Sovereign Cognitive Stack:** Implemented a formal reasoning pipeline to significantly enhance SLM accuracy and logic.
 - **System Task Registry:** Introduced a persistent `system_tasks` table and model to orchestrate and track complex, multi-item background operations with full transparency.
 - **Level 0 Grounding:** Introduced `EnvironmentScanner` to generate persistent Silo Semantic Maps, detecting naming patterns and folder purpose for high-fidelity environmental awareness.
 - **Physical Workspace Protocol:** Implemented on-disk reasoning scratchpads in internal application storage, providing a durable "Laboratory" for complex SLM calculations.
@@ -37,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
+- **Orchestration Decoupling:** Relieved `VerticalService` of its massive switch statement, delegating intent logic to the new Command Bus.
+- **Extraction Purity:** Refactored `ActionExtractor` to be a pure tool-mapping worker, moving domain-specific Librarian logic to autonomous commands.
+- **Workspace Lifecycle Management:** Integrated physical workspace management into `MemoryService`, ensuring automatic cleanup during silo de-authorization or global resets.
 - **Strict Tool Isolation:** Refactored `ActionExtractor` to explicitly forbid dangerous 'Move/Delete' hallucinations during file creation and blocked wildcard usage in tools.
 - **Ollama Context Expansion:** Increased default `num_ctx` to 16,384 across all intelligence modules for better long-context reasoning.
 - **Operational Protocols Refactoring:** Renamed `boundaries` to `protocols` in configuration with balanced limits (`silo_recursion_limit: 20`, `inference_timeout: 600s`).
@@ -46,6 +56,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vision Authorization UX:** Implemented context-aware confirmation dialogs for visual analysis to manage compute cost expectations.
 
 ### Fixed
+- **Silo-less Operation Stability:** Resolved 500 errors and null-pointer exceptions when using Arkhein in "Local" mode (silo-less).
+- **Inference Failure Consistency:** Synchronized engine failure messaging across the UI, service layer, and test suite for better UX.
 - **Deep Creation Failure:** Resolved an issue where `/create` failed to populate files with RAG-driven content under the 'Efficient' profile.
 - **Orchestrator Memory Leak:** Fixed a behavior where the assistant lost track of conversations after affirmative user input.
 - **Shadow Rebuild Crash:** Resolved an "undefined method" error in `MemoryService` that broke the force reconciliation process.
@@ -102,4 +114,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Duplicate ID Errors:** Fixed binary index collisions during large file indexing via bulk mode logic.
 - **Path Resolution:** Fixed stale storage path issues in background workers using absolute NativePHP path resolution.
 
+[0.0.5]: https://github.com/melasistema/arkhein/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/melasistema/arkhein/compare/v0.0.3...v0.0.4

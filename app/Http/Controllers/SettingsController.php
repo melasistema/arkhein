@@ -215,6 +215,21 @@ class SettingsController extends Controller
         return response()->json(['success' => true]);
     }
 
+    public function purgeChainOfThought(MemoryService $memory)
+    {
+        Log::info("Arkhein: User requested full purge of physical Laboratory reasoning (Chain of Thought).");
+        
+        try {
+            \Illuminate\Support\Facades\File::cleanDirectory(storage_path('app/arkhein/workspaces'));
+            \Illuminate\Support\Facades\File::cleanDirectory(storage_path('app/arkhein/workflows'));
+            
+            return back()->with('success', 'Physical reasoning logs (Chain of Thought) purged successfully.');
+        } catch (\Throwable $e) {
+            Log::error("Arkhein: Failed to purge Chain of Thought: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Failed to purge physical reasoning logs.']);
+        }
+    }
+
     public function update(Request $request, MemoryService $memory)
     {
         $request->validate([

@@ -21,6 +21,7 @@ test('it persists help interactions', function () {
     Http::fake([
         '*/api/generate' => Http::response(['intent' => 'SYSTEM', 'thought' => 'Testing'], 200),
         '*/api/chat' => Http::response(['message' => ['content' => 'Arkhein is a local-first agent.']], 200),
+        '*/api/embeddings' => Http::response(['embedding' => array_fill(0, 768, 0.1)], 200),
     ]);
 
     $this->get(route('help')); // Initialize for side effects
