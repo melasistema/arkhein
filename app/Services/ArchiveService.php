@@ -139,7 +139,9 @@ class ArchiveService
 
             if ($this->shouldIgnore($relativePath)) continue;
             
-            $res = $this->indexFile($folder, $file->getRealPath(), $forceFull);
+            // For incremental mode, we set skipIndex=false to allow live insertions
+            // unless we are in forceFull mode where we prefer bulk rebuild at the end.
+            $res = $this->indexFile($folder, $file->getRealPath(), $forceFull, !$forceFull);
             if ($res['chunks'] > 0) {
                 $indexedFiles++;
                 $totalChunks += $res['chunks'];
@@ -148,7 +150,12 @@ class ArchiveService
         }
 
         // Phase 2: 90% -> 100% (Vektor binary rebuild)
-        if ($anyChanges || $forceFull) {
+        // Optimization: Only rebuild if many changes occurred or forceFull is requested.
+        // Small updates are handled by live insertions in indexFile.
+        $rebuildThreshold = config('arkhein.memory.rebuild_threshold', 10); // Rebuild if >10 files changed
+        $shouldRebuild = $forceFull || ($anyChanges && $indexedFiles > $rebuildThreshold);
+
+        if ($shouldRebuild) {
             if ($task) $task->update(['description' => 'Optimizing vector search index...', 'progress' => 95]);
             
             $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
@@ -157,6 +164,7 @@ class ArchiveService
         }
 
         // Phase 3: Finalize Grounding
+        $this->generateSiloSummary($folder);
         $integrity = app(\App\Services\SiloIntegrityService::class);
         
         $folder->update([
@@ -174,7 +182,7 @@ class ArchiveService
     /**
      * Index a single file using the Media Core pipeline.
      */
-    public function indexFile(ManagedFolder $folder, string $filePath, bool $force = false): array
+    public function indexFile(ManagedFolder $folder, string $filePath, bool $force = false, bool $skipIndex = true): array
     {
         if (!File::exists($filePath)) return ['chunks' => 0];
 
@@ -315,7 +323,7 @@ class ArchiveService
                         'chunk_index' => $index,
                         'total_chunks' => count($rawChunks),
                     ],
-                    true, // skipIndex: bulk mode
+                    $skipIndex, // bulk mode or live
                     $vessel->id,
                     $mimeType,
                     $fragment->vectorAnchor
@@ -325,6 +333,50 @@ class ArchiveService
         }
 
         return ['chunks' => $chunksCreated];
+    }
+
+    /**
+     * Level 3: Canopy Evolution. Synthesizes all document summaries into a 
+     * single high-level map of the entire silo.
+     */
+    public function generateSiloSummary(ManagedFolder $folder): void
+    {
+        $vessels = Document::where('folder_id', $folder->id)
+            ->whereNotNull('summary')
+            ->get(['path', 'summary']);
+
+        if ($vessels->isEmpty()) return;
+
+        $map = $vessels->map(fn($v) => "- [{$v->path}]: {$v->summary}")->implode("\n");
+        
+        $prompt = "Level 3 (Canopy): Synthesize these document summaries into a single, comprehensive overview of the entire silo contents.
+        Identify the core purpose, key projects, and major themes found across these files.
+        
+        SUMMARIES:
+        {$map}
+        
+        Respond with a professional, high-density summary (2-3 paragraphs).";
+
+        $summary = $this->ollama->generate($prompt);
+
+        if ($summary) {
+            $folder->update(['summary' => $summary]);
+
+            // Embed the Canopy Level into the Knowledge base
+            $embeddingModel = Setting::get('embedding_model', config('services.ollama.embedding_model'));
+            $embedding = $this->ollama->embeddings($summary, $embeddingModel);
+
+            if ($embedding) {
+                $this->memory->save(
+                    (string) Str::uuid(),
+                    $summary,
+                    $embedding,
+                    'silo_summary',
+                    ['folder_id' => $folder->id],
+                    false // Live insertion into Vektor
+                );
+            }
+        }
     }
 
     protected function generateSummary(string $content): string

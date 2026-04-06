@@ -20,6 +20,7 @@ class CognitiveArbiter
     public function __construct(
         protected OllamaService $ollama,
         protected RagService $rag,
+        protected GlobalRagService $globalRag,
         protected FileArchitectService $architect
     ) {}
 
@@ -50,11 +51,28 @@ class CognitiveArbiter
         $folder = $folderId ? \App\Models\ManagedFolder::find($folderId) : null;
         $schema = $folder?->environmental_schema ?? [];
         
+        // Level 3 Discovery: If no folder specified, or if we want to enrich context,
+        // we use the Canopy Level to find relevant silos.
+        $discoveryContext = "";
+        if (!$folderId) {
+            $silos = $this->globalRag->discover($query, 3);
+            if (!empty($silos)) {
+                $discoveryContext = "### GLOBAL DISCOVERY (Level 3 Canopy):\n";
+                foreach ($silos as $s) {
+                    $discoveryContext .= "RELEVANT SILO: [ID: {$s['metadata']['folder_id']}]\nSUMMARY: {$s['content']}\n\n";
+                }
+            }
+        }
+
         // Build Silo Manifest (Only if folder exists)
-        $manifest = "";
+        $manifest = $discoveryContext;
         if ($folderId) {
             $allDocs = \App\Models\Document::where('folder_id', $folderId)->get(['path', 'summary']);
-            $manifest = "### SILO MANIFEST (GROUND TRUTH):\n";
+            $manifest .= "### SILO MANIFEST (GROUND TRUTH):\n";
+            
+            if ($folder->summary) {
+                $manifest .= "CANOPY OVERVIEW: {$folder->summary}\n\n";
+            }
 
             if (!empty($schema['folder_map'])) {
                 $manifest .= "FOLDER HIERARCHY & FILE COUNTS:\n" . implode("\n", $schema['folder_map']) . "\n\n";

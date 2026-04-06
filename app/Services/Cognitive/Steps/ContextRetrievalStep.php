@@ -26,8 +26,16 @@ class ContextRetrievalStep
         }
 
         // 2. RETRIEVE FRAGMENTS (For RAG or HYBRID)
-        // For aggregate queries like 'most common', we need a much larger window
-        $limit = ($intent === 'quantitative') ? 50 : 10;
+        // Adaptive limit based on query complexity and intent
+        $complexity = strtolower($payload->perception['complexity'] ?? 'low');
+        
+        $limit = match($intent) {
+            'quantitative', 'inventory' => 50,
+            'structural' => 30,
+            'creative' => 20,
+            default => ($complexity === 'high' ? 25 : 10),
+        };
+
         $fragments = $this->rag->recall($payload->query, $limit, $payload->folderId);
         $ctx = collect($fragments)->map(function($f) {
             $filename = $f['vessel']['filename'] ?? $f['metadata']['filename'] ?? 'Unknown Source';

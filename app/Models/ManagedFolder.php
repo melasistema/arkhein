@@ -14,7 +14,7 @@ class ManagedFolder extends Model
     const STATUS_STALE = 'stale';
     const STATUS_DRAFTING = 'drafting';
 
-    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing', 'indexing_progress', 'current_indexing_file', 'binary_hash', 'allow_visual_indexing', 'sync_status', 'environmental_schema', 'disk_signature'];
+    protected $fillable = ['path', 'name', 'last_indexed_at', 'is_indexing', 'indexing_progress', 'current_indexing_file', 'binary_hash', 'allow_visual_indexing', 'sync_status', 'environmental_schema', 'disk_signature', 'summary'];
 
     protected $casts = [
         'allow_visual_indexing' => 'boolean',

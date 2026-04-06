@@ -60,17 +60,25 @@ class ReasoningStep
             $stepStr = is_array($step) ? ($step['description'] ?? $step['step'] ?? json_encode($step)) : $step;
 
             if ($payload->task) {
-                $payload->task->update(['description' => "Thinking: Phase {$stepNum} of " . count($steps)]);
+                $payload->task->update([
+                    'progress' => (int) (($index / count($steps)) * 100),
+                    'description' => "Thinking: Phase {$stepNum} of " . count($steps) . " (" . substr($stepStr, 0, 30) . "...)"
+                ]);
             }
 
             $scratchpadContent .= "## Phase {$stepNum}: {$stepStr}\n";
             $this->cognitive->persistCoT('workspace', $folderId, $filename, $scratchpadContent);
 
-            // Execute the specific step
-            $reasoning = $this->processStep($payload, $stepStr, $scratchpadContent);
-            
-            $scratchpadContent .= "{$reasoning}\n\n";
-            $this->cognitive->persistCoT('workspace', $folderId, $filename, $scratchpadContent);
+            try {
+                // Execute the specific step
+                $reasoning = $this->processStep($payload, $stepStr, $scratchpadContent);
+                
+                $scratchpadContent .= "{$reasoning}\n\n";
+                $this->cognitive->persistCoT('workspace', $folderId, $filename, $scratchpadContent);
+            } catch (\Throwable $e) {
+                Log::error("Arkhein Laboratory: Reasoning Phase {$stepNum} failed", ['error' => $e->getMessage()]);
+                $scratchpadContent .= "> [ERROR] Phase {$stepNum} execution failed. Retrying logic for next phase.\n\n";
+            }
         }
 
         return $scratchpadContent;

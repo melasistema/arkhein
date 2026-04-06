@@ -104,7 +104,7 @@ test('it can persist and retrieve smart settings', function () {
 test('vantage query handles ollama failure gracefully', function () {
     Http::fake([
         '*/api/generate' => Http::response(['error' => 'Connection refused'], 500),
-        '*/api/embeddings' => Http::response([], 200),
+        '*/api/embeddings' => Http::response(['embedding' => array_fill(0, 768, 0.1)], 200),
     ]);
 
     $vertical = Vertical::create([

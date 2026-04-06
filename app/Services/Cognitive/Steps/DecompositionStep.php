@@ -16,23 +16,30 @@ class DecompositionStep
             $payload->task->update(['description' => 'Decomposing task into sub-goals...']);
         }
 
+        $intent = strtolower($payload->perception['intent'] ?? 'informational');
         $schema = $payload->folder?->environmental_schema ?? [];
         $schemaStr = !empty($schema) ? json_encode($schema, JSON_PRETTY_PRINT) : "No schema.";
 
-        $prompt = "Level 3 (Decomposition): Break this task into a 4-phase 'Deep Reasoning' execution plan for an autonomous agent.
-        USER: \"{$payload->query}\"
-        ENVIRONMENT: {$schemaStr}
-        MANIFEST (Silo Contents):
+        $prompt = "Level 3 (Decomposition): Create a detailed execution plan for an autonomous agent.
+        USER QUERY: \"{$payload->query}\"
+        INTENT: {$intent}
+        MANIFEST:
         {$payload->manifest}
         
         INSTRUCTIONS:
-        1. Create a logical roadmap to fulfill the USER request using the MANIFEST.
-        2. Phase 1: Targeting (Identify EVERY relevant file in the manifest).
-        3. Phase 2: Extraction (Extract the specific facts requested for EACH file).
-        4. Phase 3: Calculation/Tally (Perform math, count occurrences, or compare values across files).
-        5. Phase 4: Final Conclusion (Synthesize and audit for completeness).
+        1. Break this task into 3-5 logical phases.
+        2. If INTENT is 'Quantitative' or 'Inventory':
+           - Phase 1: Target ALL relevant documents from the manifest.
+           - Phase 2: Extract specific metrics/facts from EACH targeted document.
+           - Phase 3: Perform math, counting, or comparison.
+           - Phase 4: Audit for completeness and synthesize final tally.
+        3. If INTENT is 'Creative' or 'Informational':
+           - Phase 1: Search and gather context fragments.
+           - Phase 2: Analyze key points and align with user constraints.
+           - Phase 3: Draft response and self-audit.
         
-        Respond ONLY in a JSON array of strings: [\"Phase 1...\", \"Phase 2...\", \"Phase 3...\", \"Phase 4...\"]";
+        Respond ONLY as a JSON array of strings.";
+        
         $res = $this->ollama->generate($prompt, null, ['format' => 'json']);
         $steps = json_decode($res, true);
 

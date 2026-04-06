@@ -27,7 +27,6 @@ class MemoryService
 
     /**
      * Wrap an operation in a partition-safe scope.
-     * Prevents static race conditions and ensures locking.
      */
     public function withScope(?int $folderId, callable $callback, bool $shadow = false)
     {
@@ -36,7 +35,7 @@ class MemoryService
             return $callback($this->getPartitionPath($folderId, $shadow));
         }
 
-        return $this->withLock($folderId, function () use ($folderId, $callback, $shadow) {
+        $execution = function() use ($folderId, $callback, $shadow) {
             $this->isScoped = true;
             try {
                 $path = $this->getPartitionPath($folderId, $shadow);
@@ -52,7 +51,14 @@ class MemoryService
             } finally {
                 $this->isScoped = false;
             }
-        });
+        };
+
+        // Shadow partitions are process-isolated and don't require locking the primary
+        if ($shadow) {
+            return $execution();
+        }
+
+        return $this->withLock($folderId, $execution);
     }
 
     protected function getPartitionPath(?int $folderId, bool $shadow = false): string
@@ -72,25 +78,33 @@ class MemoryService
         $handle = fopen($lockPath, 'c');
 
         if ($handle === false) {
-            throw new \RuntimeException("Could not create lock file for partition [{$folderId}]");
+            throw new \RuntimeException("Arkhein Critical: Could not create lock file for partition [{$folderId}]");
         }
 
-        $timeout = 5; // seconds
-        $start = time();
+        $timeout = config('arkhein.memory.lock_timeout', 10); // 10s default
+        $start = microtime(true);
 
         try {
-            // Attempt non-blocking lock with timeout
+            // Attempt non-blocking lock with exponential backoff
+            $retryCount = 0;
             while (!flock($handle, LOCK_EX | LOCK_NB)) {
-                if (time() - $start >= $timeout) {
-                    throw new \RuntimeException("Timeout acquiring lock for partition [{$folderId}] after {$timeout} seconds.");
+                if (microtime(true) - $start >= $timeout) {
+                    Log::error("Arkhein Memory: Lock timeout for partition [{$folderId}]");
+                    throw new \RuntimeException("Timeout acquiring lock for partition [{$folderId}] after {$timeout}s. Another process may be indexing.");
                 }
-                usleep(250000); // Wait 250ms
+                
+                // Exponential backoff: 10ms, 20ms, 40ms, ... up to 250ms
+                $wait = min(250000, 10000 * pow(2, $retryCount));
+                usleep($wait);
+                $retryCount++;
             }
             
             return $callback();
         } finally {
-            flock($handle, LOCK_UN);
-            fclose($handle);
+            if ($handle) {
+                flock($handle, LOCK_UN);
+                fclose($handle);
+            }
         }
     }
 
@@ -204,15 +218,21 @@ class MemoryService
 
     /**
      * Rebuild Vektor from Knowledge base for a specific partition.
+     * Uses shadow directory by default for zero-downtime.
      */
     public function rebuildIndex(?int $dimensions = null, ?int $folderId = null, ?ManagedFolder $folder = null): bool
     {
-        return $this->withScope($folderId, function () use ($dimensions, $folderId, $folder) {
+        // 1. Prepare Shadow
+        $this->prepareShadow($folderId);
+
+        // 2. Index into Shadow
+        $success = $this->withScope($folderId, function () use ($dimensions, $folderId, $folder) {
             $dimensions = $dimensions ?? (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
             Config::setDimensions($dimensions);
             
-            $this->clearBinaryFiles(Config::getDataDir());
-
+            // clearBinaryFiles is already called by prepareShadow, but withScope might have set path to primary.
+            // withScope re-entrant logic will keep us in shadow if we call it from withScope(..., true)
+            
             $indexer = new Indexer();
             $query = Knowledge::on('nativephp');
 
@@ -223,7 +243,7 @@ class MemoryService
             $total = $query->count();
             $processed = 0;
 
-            $query->chunk(100, function ($items) use ($indexer, $dimensions, $folder, $total, &$processed) {
+            $query->chunk(200, function ($items) use ($indexer, $dimensions, $folder, $total, &$processed) {
                 foreach ($items as $item) {
                     $embedding = $item->embedding;
                     if (is_string($embedding)) $embedding = json_decode($embedding, true);
@@ -241,15 +261,22 @@ class MemoryService
                         Log::error("Failed to index knowledge item {$item->id}: " . $e->getMessage());
                     }
                 }
-            });
+            }, true); // shadow = true
 
             // Update integrity hash
             $newHash = $this->computeStateHash($folderId, $dimensions);
             $this->updateStoredHash($folderId, $newHash);
 
-            Log::info("Arkhein Vektor: Rebuilt partition [{$folderId}] with {$processed} items. Hash: {$newHash}");
+            Log::info("Arkhein Vektor: Rebuilt partition [{$folderId}] (SHADOW) with {$processed} items. Hash: {$newHash}");
             return true;
-        });
+        }, true); // shadow = true
+
+        // 3. Swap Shadow
+        if ($success) {
+            $this->swapShadow($folderId);
+        }
+
+        return $success;
     }
 
     public function rebuildGlobalIndex(?int $dimensions = null): bool
@@ -303,11 +330,11 @@ class MemoryService
     /**
      * Search Knowledge Base within a specific partition.
      */
-    public function search(array $vector, int $limit = 5, ?float $threshold = null, ?int $folderId = null)
+    public function search(array $vector, int $limit = 5, ?float $threshold = null, ?int $folderId = null, ?string $type = null)
     {
         $threshold = $threshold ?? config('knowledge.recall_threshold', 0.65);
 
-        return $this->withScope($folderId, function () use ($vector, $limit, $threshold, $folderId) {
+        return $this->withScope($folderId, function () use ($vector, $limit, $threshold, $folderId, $type) {
             try {
                 // Pre-search integrity check
                 $dimensions = count($vector);
@@ -323,7 +350,7 @@ class MemoryService
                 }
 
                 $results = (new Searcher())->search($vector, $limit);
-                return $this->parseResults($results, $threshold);
+                return $this->parseResults($results, $threshold, $type);
             } catch (\Exception $e) {
                 Log::error("Vektor search failed for partition [{$folderId}]: " . $e->getMessage());
                 return [];
@@ -358,7 +385,7 @@ class MemoryService
         }
     }
 
-    protected function parseResults($results, float $threshold = 0)
+    protected function parseResults($results, float $threshold = 0, ?string $typeFilter = null)
     {
         $parsed = [];
         foreach ($results as $result) {
@@ -366,7 +393,12 @@ class MemoryService
             $similarity = 1.0 - ($result['score'] ?? 1.0);
             if ($similarity < $threshold) continue;
 
-            $item = Knowledge::on('nativephp')->with('document')->find($id);
+            $query = Knowledge::on('nativephp')->with('document');
+            if ($typeFilter) {
+                $query->where('type', $typeFilter);
+            }
+            
+            $item = $query->find($id);
             if ($item) {
                 $parsed[] = [
                     'id' => $id,

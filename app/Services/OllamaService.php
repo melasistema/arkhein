@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Models\Setting;
 
 class OllamaService
@@ -55,15 +56,20 @@ class OllamaService
             $payload['options']['num_ctx'] = 16384;
         }
 
-        $timeout = config('arkhein.protocols.inference_timeout', 300);
-        $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
+        $cacheKey = 'ollama_gen_' . md5(json_encode($payload));
+        $ttl = config('arkhein.protocols.inference_cache_ttl', 86400); // Default 24h
 
-        if ($response->failed()) {
-            Log::error("Ollama generate failed: " . $response->body());
-            return "Inference engine failed. Check system log.";
-        }
+        return Cache::remember($cacheKey, $ttl, function() use ($payload) {
+            $timeout = config('arkhein.protocols.inference_timeout', 300);
+            $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
 
-        return $response->json('response') ?? "Inference engine returned an empty response.";
+            if ($response->failed()) {
+                Log::error("Ollama generate failed: " . $response->body());
+                return "Inference engine failed. Check system log.";
+            }
+
+            return $response->json('response') ?? "Inference engine returned an empty response.";
+        });
     }
 
     /**
@@ -93,15 +99,20 @@ class OllamaService
             $payload['options']['num_ctx'] = 16384;
         }
 
-        $timeout = config('arkhein.protocols.inference_timeout', 300);
-        $response = Http::timeout($timeout)->post("{$this->host}/api/chat", $payload);
+        $cacheKey = 'ollama_chat_' . md5(json_encode($payload));
+        $ttl = config('arkhein.protocols.inference_cache_ttl', 86400);
 
-        if ($response->failed()) {
-            Log::error("Ollama chat failed: " . $response->body());
-            return "Inference engine failed. Check system log.";
-        }
+        return Cache::remember($cacheKey, $ttl, function() use ($payload) {
+            $timeout = config('arkhein.protocols.inference_timeout', 300);
+            $response = Http::timeout($timeout)->post("{$this->host}/api/chat", $payload);
 
-        return $response->json('message.content') ?? "Inference engine returned an empty response.";
+            if ($response->failed()) {
+                Log::error("Ollama chat failed: " . $response->body());
+                return "Inference engine failed. Check system log.";
+            }
+
+            return $response->json('message.content') ?? "Inference engine returned an empty response.";
+        });
     }
 
     /**
@@ -195,17 +206,24 @@ class OllamaService
             return null;
         }
 
-        $response = Http::timeout(60)->post("{$this->host}/api/embeddings", [
+        $payload = [
             'model' => $selectedModel,
             'prompt' => $this->sanitize($prompt),
-        ]);
+        ];
 
-        if ($response->failed()) {
-            Log::error("Ollama embeddings failed: " . $response->body());
-            return null;
-        }
+        $cacheKey = 'ollama_emb_' . md5(json_encode($payload));
+        $ttl = config('arkhein.protocols.inference_cache_ttl', 86400 * 30); // Embeddings are stable, cache for 30 days
 
-        return $response->json('embedding');
+        return Cache::remember($cacheKey, $ttl, function() use ($payload) {
+            $response = Http::timeout(60)->post("{$this->host}/api/embeddings", $payload);
+
+            if ($response->failed()) {
+                Log::error("Ollama embeddings failed: " . $response->body());
+                return null;
+            }
+
+            return $response->json('embedding');
+        });
     }
 
     public function generateWithImages(string $prompt, array $imagePaths, ?string $model = null): string
@@ -218,9 +236,12 @@ class OllamaService
         }
 
         $images = [];
+        $imageHashes = [];
         foreach ($imagePaths as $path) {
             if (file_exists($path)) {
-                $images[] = base64_encode(file_get_contents($path));
+                $content = file_get_contents($path);
+                $images[] = base64_encode($content);
+                $imageHashes[] = md5($content);
             }
         }
 
@@ -231,15 +252,21 @@ class OllamaService
             'stream' => false,
         ];
 
-        $timeout = config('arkhein.protocols.inference_timeout', 300);
-        $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
+        // Cache based on prompt, model, and image hashes (to avoid storing full base64 in cache key)
+        $cacheKey = 'ollama_vis_' . md5($prompt . $selectedModel . implode('_', $imageHashes));
+        $ttl = config('arkhein.protocols.inference_cache_ttl', 86400);
 
-        if ($response->failed()) {
-            Log::error("Ollama vision failed: " . $response->body());
-            return "Vision analysis failed.";
-        }
+        return Cache::remember($cacheKey, $ttl, function() use ($payload) {
+            $timeout = config('arkhein.protocols.inference_timeout', 300);
+            $response = Http::timeout($timeout)->post("{$this->host}/api/generate", $payload);
 
-        return $response->json('response') ?? "Vision engine returned empty response.";
+            if ($response->failed()) {
+                Log::error("Ollama vision failed: " . $response->body());
+                return "Vision analysis failed.";
+            }
+
+            return $response->json('response') ?? "Vision engine returned empty response.";
+        });
     }
 
     /**

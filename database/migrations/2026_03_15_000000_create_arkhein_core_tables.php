@@ -24,6 +24,7 @@ return new class extends Migration
             $table->string('path')->unique();
             $table->string('name');
             $table->string('sync_status')->default('idle'); // idle, queued, indexing, stale, drafting
+            $table->text('summary')->nullable(); // Level 3 Canopy: Overview of the entire silo
             $table->json('environmental_schema')->nullable(); // Level 0 Grounding: patterns, types, purpose
             $table->string('disk_signature')->nullable(); // For drift detection (count + mtime)
             $table->boolean('is_indexing')->default(false);
