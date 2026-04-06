@@ -42,12 +42,12 @@ class FileArchitectService
         $targetPaths = $this->identifyTargets($folder, $instruction);
         
         if (empty($targetPaths)) {
-            $cotContent .= "## Phase 2: Targeting\nERROR: No relevant documents found.\n";
+            $cotContent .= "## Phase 2: Targeting\nERROR: No relevant documents found in silo manifest.\n";
             $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
-            return "No relevant documents found to fulfill this instruction.";
+            return "I could not identify any relevant documents in this silo to fulfill your request.";
         }
         
-        $cotContent .= "## Phase 2: Targeting\nFound " . count($targetPaths) . " relevant documents.\n";
+        $cotContent .= "## Phase 2: Targeting\nFound " . count($targetPaths) . " candidate documents.\n";
         foreach($targetPaths as $p) $cotContent .= "- {$p}\n";
         $cotContent .= "\n";
         $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
@@ -56,6 +56,7 @@ class FileArchitectService
         $factMap = [];
         $targetPaths = array_values($targetPaths);
         $cotContent .= "## Phase 3: Harvesting\n";
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
         
         foreach ($targetPaths as $index => $path) {
             $count = $index + 1;
@@ -65,23 +66,32 @@ class FileArchitectService
             $fact = $this->harvestFact($folder, $path, $instruction, $roadmap);
             if ($fact) {
                 $factMap[] = $fact;
-                $cotContent .= "### Source: {$path}\n{$fact}\n\n";
-                $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
+                $cotContent .= "### [MATCH] {$path}\n> {$fact}\n\n";
+            } else {
+                $cotContent .= "### [SKIP] {$path}\n> No matching data found.\n\n";
             }
+            $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
+        }
+
+        if (empty($factMap)) {
+            $errorMsg = "I scanned " . count($targetPaths) . " files but found no data matching your specific request.";
+            $cotContent .= "## Phase 4: Synthesis\nABORTED: No data harvested.\n";
+            $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
+            return $errorMsg;
         }
 
         // 4. THE ASSEMBLY LAYER (Drafting)
         if ($onProgress) $onProgress("Drafting initial document...");
         $initialDraft = $this->synthesize($factMap, $instruction);
         
-        $cotContent .= "## Phase 4: Initial Synthesis\n[Draft Generated]\n\n";
+        $cotContent .= "## Phase 4: Initial Synthesis\n[Draft Generated from " . count($factMap) . " sources]\n\n";
         $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         // 5. THE SELF-CORRECTION LAYER (Critique & Refinement)
         if ($onProgress) $onProgress("Verifying accuracy and refining...");
         $finalDraft = $this->refine($initialDraft, $factMap, $instruction);
         
-        $cotContent .= "## Phase 5: Final Refinement\nRefinement completed.\n";
+        $cotContent .= "## Phase 5: Final Refinement\nRefinement completed. Final draft is ready.\n";
         $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         return $finalDraft;
@@ -120,25 +130,26 @@ class FileArchitectService
 
         // Prompt includes the Roadmap (Contextual Injection) and asks for Thinking (Scratchpad)
         $prompt = "You are the Arkhein Data Miner.
+        
+        GOAL: Extract specific data for: \"{$instruction}\"
         STRATEGY: {$roadmap}
-        TARGET: \"{$instruction}\"
         FILE: {$path}
         
-        FILE CONTENT:
+        FILE CONTENT (RAW):
         {$fragments}
 
         INSTRUCTIONS:
-        1. First, wrap your internal analysis in <think>...</think> tags.
-        2. Then, extract the EXACT values. Do NOT summarize.
-        3. One sentence maximum. If missing, respond 'NOT_FOUND'.";
+        1. Perform a deep scan of the CONTENT above.
+        2. Identify specific values (dates, names, amounts, descriptions) matching the GOAL.
+        3. If no matching data is found, output 'NOT_FOUND'.
+        4. Output ONLY the extracted facts. No preamble. One dense list or paragraph.
+        5. Use EXACT strings from the content.";
 
         $response = $this->ollama->generate($prompt, null, [
             'options' => ['temperature' => 0, 'num_ctx' => 8192]
         ]);
         
-        // Strip the thinking block from the stored fact
-        $fact = preg_replace('/<think>.*?<\/think>/s', '', $response);
-        $fact = trim($fact);
+        $fact = trim($response);
 
         if (str_contains(strtoupper($fact), 'NOT_FOUND') || empty($fact)) {
             return null;
@@ -151,15 +162,18 @@ class FileArchitectService
     {
         $data = implode("\n", $factMap);
         $prompt = "You are the Arkhein Master Architect.
-        TASK: Assemble the provided SOURCE DATA into a professional Markdown document.
-        USER INSTRUCTION: \"{$instruction}\"
+        
+        GOAL: Assemble the provided SOURCE DATA into a professional Markdown document.
+        INSTRUCTION: \"{$instruction}\"
         
         SOURCE DATA:
         {$data}
 
-        RULES:
-        1. Use EXACT values from source data. No generic labels.
-        2. Structured Markdown format. No preamble.
+        MANDATORY RULES:
+        1. Use ONLY the values found in the SOURCE DATA.
+        2. If the data is missing specific requested fields (e.g. taxes), do NOT invent them. Leave them out or mark as 'Not Available'.
+        3. Never use generic or filler data (e.g., 'XYZ Corp').
+        4. Output professional Markdown. No preamble or conversational filler.
         
         DOCUMENT CONTENT:";
 
@@ -175,17 +189,22 @@ class FileArchitectService
     {
         $data = implode("\n", $factMap);
         $prompt = "You are the Arkhein Quality Auditor.
-        Compare the DRAFT with the ORIGINAL DATA. 
+        
+        COMPARE the DRAFT with the ORIGINAL SOURCE DATA. 
         
         DRAFT:
         {$draft}
         
-        ORIGINAL DATA:
+        ORIGINAL SOURCE DATA:
         {$data}
         
-        TASK: If the DRAFT is missing any items from ORIGINAL DATA or used generic labels instead of values, rewrite it to be 100% accurate. 
-        Otherwise, return the DRAFT exactly as is.
-        Output ONLY the final markdown content.
+        TASK:
+        1. Identify any data in the DRAFT that does NOT exist in the ORIGINAL SOURCE DATA (Hallucinations).
+        2. REMOVE all hallucinations.
+        3. Ensure all pieces of data from the ORIGINAL SOURCE DATA are present.
+        4. If the draft is accurate and hallucination-free, return it exactly.
+        
+        Output ONLY the final cleaned markdown content. No preamble.
         
         FINAL DOCUMENT:";
 
@@ -196,23 +215,49 @@ class FileArchitectService
 
     protected function identifyTargets(ManagedFolder $folder, string $instruction): array
     {
-        if (preg_match('/\b(all|every|everything|complete list|entire)\b/i', $instruction)) {
-            return Document::where('folder_id', $folder->id)->pluck('path')->all();
+        $hasGlobalKeyword = (bool) preg_match('/\b(all|every|everything|complete list|entire|total|inventory)\b/i', $instruction);
+
+        if ($hasGlobalKeyword) {
+            // For global requests, we prioritize documents that aren't empty
+            return Document::where('folder_id', $folder->id)
+                ->whereNotNull('summary')
+                ->pluck('path')
+                ->take(50) // Safety cap
+                ->all();
         }
 
         $docs = Document::where('folder_id', $folder->id)->get(['path', 'summary']);
         $manifest = $docs->map(fn($d) => "- {$d->path} | Summary: {$d->summary}")->implode("\n");
 
-        $prompt = "Identify target files for: \"{$instruction}\"\nMANIFEST:\n{$manifest}\nOutput JSON array of paths.";
+        $prompt = "TASK: Identify specific target files that contain data needed for: \"{$instruction}\"
+        
+        MANIFEST (Silo Contents):
+        {$manifest}
+        
+        Respond ONLY with a JSON array of strings containing the file paths.
+        Example: [\"path/to/file1.md\", \"path/to/file2.pdf\"]";
+
         $response = $this->ollama->generate($prompt, null, ['format' => 'json']);
         
         try {
             $data = json_decode($response, true);
-            if (isset($data['paths'])) $data = $data['paths'];
-            if (!is_array($data)) return [];
-            return collect($data)->map(fn($i) => is_array($i) ? ($i['path'] ?? null) : $i)->filter()->values()->all();
+            if (is_array($data) && isset($data['paths'])) $data = $data['paths'];
+            
+            if (!is_array($data)) {
+                // Fallback for messy JSON
+                if (preg_match('/\[.*\]/s', $response, $matches)) {
+                    $data = json_decode($matches[0], true);
+                }
+            }
+            
+            return collect($data)
+                ->map(fn($i) => is_array($i) ? ($i['path'] ?? null) : $i)
+                ->filter()
+                ->values()
+                ->all();
         } catch (\Exception $e) {
-            return [];
+            Log::warning("Architect: Target identification failed, falling back to all docs.");
+            return Document::where('folder_id', $folder->id)->pluck('path')->take(10)->all();
         }
     }
 }
