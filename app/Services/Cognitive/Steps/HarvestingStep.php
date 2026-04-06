@@ -18,7 +18,14 @@ class HarvestingStep
 
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
-        $intent = strtolower($payload->perception['intent'] ?? '');
+        $intent = $payload->perception['intent'] ?? '';
+        
+        // Ensure intent is a string (LLMs sometimes return arrays for JSON schema)
+        if (is_array($intent)) {
+            $intent = $intent[0] ?? 'Informational';
+        }
+        
+        $intent = strtolower((string) $intent);
         $hasHighIntensityKeywords = preg_match('/\b(most|common|top|frequent|proportion|average|total|sum)\b/i', $payload->query);
 
         // We only perform a structural harvest for global aggregate queries in a silo context.

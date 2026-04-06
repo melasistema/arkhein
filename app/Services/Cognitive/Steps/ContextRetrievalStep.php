@@ -19,6 +19,13 @@ class ContextRetrievalStep
         $strategy = $payload->perception['strategy'] ?? 'HYBRID';
         $intent = $payload->perception['intent'] ?? 'Informational';
 
+        // Type safety: LLMs sometimes return arrays for these fields
+        if (is_array($strategy)) $strategy = $strategy[0] ?? 'HYBRID';
+        if (is_array($intent)) $intent = $intent[0] ?? 'Informational';
+        
+        $strategy = (string) $strategy;
+        $intent = (string) $intent;
+
         // 1. MANIFEST ONLY: Clean structural view
         if ($strategy === 'USE_MANIFEST') {
             $payload->context = $payload->manifest;
@@ -27,9 +34,9 @@ class ContextRetrievalStep
 
         // 2. RETRIEVE FRAGMENTS (For RAG or HYBRID)
         // Adaptive limit based on query complexity and intent
-        $complexity = strtolower($payload->perception['complexity'] ?? 'low');
+        $complexity = strtolower((string) ($payload->perception['complexity'] ?? 'low'));
         
-        $limit = match($intent) {
+        $limit = match(strtolower($intent)) {
             'quantitative', 'inventory' => 50,
             'structural' => 30,
             'creative' => 20,
