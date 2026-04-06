@@ -42,11 +42,13 @@ class HarvestingStep
                 $count++;
                 $perception = $doc->metadata['perception'] ?? [];
                 $type = $perception['document_type'] ?? 'Unknown';
-                $fact = $perception['semantic_summary'] ?? "No summary available.";
+                $summary = $perception['semantic_summary'] ?? "No summary available.";
+                $details = $perception['extracted_metadata'] ?? [];
                 
                 $harvestedContext .= "FILE {$count}: [{$doc->path}]\n";
                 $harvestedContext .= "TYPE: {$type}\n";
-                $harvestedContext .= "CONTENT SUMMARY: {$fact}\n\n";
+                $harvestedContext .= "SUMMARY: {$summary}\n";
+                $harvestedContext .= "STRUCTURED DATA: " . json_encode($details) . "\n\n";
             }
 
             // Prepend to context

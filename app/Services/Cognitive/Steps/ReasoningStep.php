@@ -99,8 +99,10 @@ class ReasoningStep
         
         INSTRUCTIONS:
         1. If Phase 1: List EVERY file found in the context manifest.
-        2. If Phase 2: Extract the specific fact (e.g. Illness) for EACH and every file individually.
-        3. If Phase 3: Perform the mathematical tally. Count occurrences of each value extracted in Phase 2.
+        2. If Phase 2: Extract the specific fact (e.g. Illness, Amount, Date) for EACH and every file individually.
+           - MANDATE: Use the 'STRUCTURED DATA' field for each file to ensure 100% accuracy.
+        3. If Phase 3: Perform the mathematical tally. Count occurrences or sum values extracted in Phase 2.
+           - Show your math clearly (e.g., '100 + 200 = 300').
         4. If Phase 4: Final verification and audit.
         
         Output ONLY your analytical findings for this phase. Be extremely exhaustive.";
