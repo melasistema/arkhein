@@ -9,6 +9,7 @@ use Illuminate\Pipeline\Pipeline;
 use App\Services\Cognitive\CognitivePayload;
 use App\Services\Cognitive\Steps\PerceptionStep;
 use App\Services\Cognitive\Steps\ContextRetrievalStep;
+use App\Services\Cognitive\Steps\HarvestingStep;
 use App\Services\Cognitive\Steps\DecompositionStep;
 use App\Services\Cognitive\Steps\ReasoningStep;
 use App\Services\Cognitive\Steps\SelfCritiqueStep;
@@ -76,32 +77,30 @@ class CognitiveArbiter
                 ->send($payload)
                 ->through([
                     PerceptionStep::class,
-                    ContextRetrievalStep::class
+                    ContextRetrievalStep::class,
+                    HarvestingStep::class
                 ])
                 ->thenReturn();
 
             // 1.5 Actionable Inventory (The Sovereign Coordinator)
-            if (strtolower($payload->perception['intent'] ?? '') === 'inventory') {
-                if ($task) $task->update(['description' => 'Querying silo inventory...']);
+            $intent = strtolower($payload->perception['intent'] ?? '');
+            $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything)\b/i', $query);
+
+            if ($intent === 'inventory' || ($intent === 'quantitative' && $hasHighIntensityKeywords)) {
+                if ($task) $task->update(['description' => 'Querying structural inventory...']);
                 $tool = new \App\Services\Tools\InventoryTool();
                 $result = $tool->execute(['pattern' => $payload->perception['entities'][0] ?? null], $folder);
                 
                 if ($result['success']) {
-                    $payload->verified = implode("\n", $result['data']);
-                    // Skip to Synthesis
-                    $payload = app(Pipeline::class)
-                        ->send($payload)
-                        ->through([SynthesisStep::class])
-                        ->thenReturn();
-                    
-                    return $this->finalizeTask($payload);
+                    // Inject the true manifest into the scratchpad/context instead of RAG fragments
+                    $payload->context = "### ACCURATE SILO MANIFEST (GROUND TRUTH):\n" . implode("\n", $result['data']);
+                    $payload->verified = $payload->context;
                 }
             }
 
             // Dynamically assemble the rest of the pipeline based on complexity
-            $intent = strtolower($payload->perception['intent'] ?? '');
             $complexity = strtolower($payload->perception['complexity'] ?? 'low');
-            $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything)\b/i', $query);
+            $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything|most|common|top|frequent|proportion|how many|entire)\b/i', $query);
             $isComplex = (in_array($intent, ['quantitative', 'structural', 'creative']) || $complexity === 'high' || $hasHighIntensityKeywords);
 
             $remainingSteps = [];

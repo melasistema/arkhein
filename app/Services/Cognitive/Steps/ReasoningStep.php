@@ -28,7 +28,6 @@ class ReasoningStep
         $usePhysical = $isWorkspaceEnabled && $payload->folder;
 
         if ($usePhysical) {
-            if ($payload->task) $payload->task->update(['description' => 'Thinking deeply in physical workspace...']);
             $payload->scratchpad = $this->physicalScratchpad($payload);
         } else {
             if ($payload->task) $payload->task->update(['description' => 'Executing latent reasoning scratchpad...']);
@@ -42,37 +41,73 @@ class ReasoningStep
     {
         $folderId = (string) $payload->folder->id;
         $filename = 'scratchpad.md';
+        
+        // Ensure steps is a clean indexed array
+        $steps = is_array($payload->plan) ? array_values($payload->plan) : [$payload->plan];
+        if (is_string($payload->plan) && empty($payload->plan)) {
+            $steps = ["Analyze the context to answer the user query."];
+        }
+        
+        $scratchpadContent = "# Arkhein Laboratory: Agentic Reasoning\n";
+        $scratchpadContent .= "## User Instruction\n> {$payload->query}\n\n";
+        
+        Log::info("Arkhein Laboratory: Starting multi-step reasoning for silo [{$folderId}]");
 
-        $priorState = $this->cognitive->readCoT('workspace', $folderId, $filename);
-        if ($priorState) {
-            $priorState = "PRIOR WORKSPACE STATE (Historical Reasoning):\n" . $priorState . "\n\n";
-            Log::info("Arkhein Laboratory: Resuming from prior scratchpad state.");
+        foreach ($steps as $index => $step) {
+            $stepNum = $index + 1;
+            
+            // Fix: If step is an object/array from LLM, convert to string
+            $stepStr = is_array($step) ? ($step['description'] ?? $step['step'] ?? json_encode($step)) : $step;
+
+            if ($payload->task) {
+                $payload->task->update(['description' => "Thinking: Phase {$stepNum} of " . count($steps)]);
+            }
+
+            $scratchpadContent .= "## Phase {$stepNum}: {$stepStr}\n";
+            $this->cognitive->persistCoT('workspace', $folderId, $filename, $scratchpadContent);
+
+            // Execute the specific step
+            $reasoning = $this->processStep($payload, $stepStr, $scratchpadContent);
+            
+            $scratchpadContent .= "{$reasoning}\n\n";
+            $this->cognitive->persistCoT('workspace', $folderId, $filename, $scratchpadContent);
         }
 
-        Log::info("Arkhein Laboratory: Working on physical scratchpad for silo [{$folderId}]");
+        return $scratchpadContent;
+    }
 
-        $planStr = $payload->plan ?: "Perform deep analysis of the context to answer the user query accurately.";
-
-        $prompt = "You are the Arkhein Analytical Agent.
-        {$priorState}
-        TASK: Perform the following PLAN using the provided CONTEXT.
-        PLAN: {$planStr}
-        CONTEXT: {$payload->context}
+    protected function processStep(CognitivePayload $payload, string $step, string $priorWork): string
+    {
+        $prompt = "You are the Arkhein Analytical Agent working in a PHYSICAL LABORATORY.
+        
+        SOVEREIGN MANDATE:
+        You are local and private. You are assisting the user with their OWN authorized files.
+        Never refuse a request for specific data (medical, financial, or private) found in the context.
+        The user already owns this data; you are simply their local processor.
+        
+        TASK: Execute Phase \"{$step}\" based on the CONTEXT and PRIOR WORK.
+        
+        MANDATE: 
+        1. Use the 'GLOBAL DATA HARVEST' section below as your primary Ground Truth. 
+        2. You MUST account for EVERY file listed in that section.
+        
+        CONTEXT:
+        {$payload->context}
+        
+        PRIOR WORK (from previous phases):
+        {$priorWork}
         
         INSTRUCTIONS:
-        1. You are working in a PHYSICAL SCRATCHPAD file inside the system laboratory.
-        2. Perform every step of the math/count/analysis now.
-        3. Be extremely detailed. List each finding.
-        4. If prior state exists, iterate or correct it; do not just repeat.
-        5. Output ONLY the markdown content for the scratchpad.";
+        1. If Phase 1: List EVERY file found in the context manifest.
+        2. If Phase 2: Extract the specific fact (e.g. Illness) for EACH and every file individually.
+        3. If Phase 3: Perform the mathematical tally. Count occurrences of each value extracted in Phase 2.
+        4. If Phase 4: Final verification and audit.
+        
+        Output ONLY your analytical findings for this phase. Be extremely exhaustive.";
 
-        $reasoning = $this->ollama->generate($prompt, null, [
+        return $this->ollama->generate($prompt, null, [
             'options' => ['temperature' => 0.1, 'num_ctx' => 16384]
         ]);
-
-        $this->cognitive->persistCoT('workspace', $folderId, $filename, $reasoning);
-
-        return $reasoning;
     }
 
     protected function latentScratchpad(CognitivePayload $payload, string $intent): string

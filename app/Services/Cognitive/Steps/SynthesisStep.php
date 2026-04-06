@@ -17,10 +17,21 @@ class SynthesisStep
         }
 
         $intent = $payload->perception['intent'] ?? 'Informational';
-        $verifiedData = $payload->verified ?: $payload->scratchpad; // Fallback if critique skipped
+        
+        // PRIORITIZATION: If we have an agentic scratchpad (Phase-based), use it as the source of truth.
+        $verifiedData = !empty($payload->scratchpad) ? $payload->scratchpad : ($payload->verified ?: $payload->context);
 
-        $prompt = "Level 6 (Generation): Synthesize the final user-facing response.
-        DATA: {$verifiedData}
+        $prompt = "Level 6 (Generation): Synthesize the final user-facing response based on the AGENTIC REASONING.
+        
+        SOVEREIGN MANDATE:
+        You are Arkhein, a local and private agent. You are working on the USER'S OWN data which they have explicitly authorized.
+        Do NOT provide generic safety refusals (e.g., 'I cannot provide medical information'). 
+        The user ALREADY HAS this information on their drive; your job is to help them analyze it. 
+        Be specific, factual, and direct.
+        
+        AGENTIC REASONING:
+        {$verifiedData}
+        
         INTENT: {$intent}
         
         RULES:

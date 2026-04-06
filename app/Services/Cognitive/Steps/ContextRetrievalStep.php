@@ -26,7 +26,8 @@ class ContextRetrievalStep
         }
 
         // 2. RETRIEVE FRAGMENTS (For RAG or HYBRID)
-        $limit = ($intent === 'Quantitative') ? 15 : 8;
+        // For aggregate queries like 'most common', we need a much larger window
+        $limit = ($intent === 'quantitative') ? 50 : 10;
         $fragments = $this->rag->recall($payload->query, $limit, $payload->folderId);
         $ctx = collect($fragments)->map(function($f) {
             $filename = $f['vessel']['filename'] ?? $f['metadata']['filename'] ?? 'Unknown Source';

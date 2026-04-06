@@ -15,7 +15,7 @@ class CognitivePayload
     public string $manifest = '';
     public array $perception = [];
     public string $context = '';
-    public string $plan = '';
+    public array|string $plan = [];
     public string $scratchpad = '';
     public string $verified = '';
     public ?string $finalResult = null;

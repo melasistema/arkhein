@@ -27,13 +27,14 @@ class PerceptionStep
         
         Extract:
         1. Intent (Informational, Actionable, Creative, Quantitative, INVENTORY)
-           - Use INVENTORY for: 'list files', 'how many files', 'show inventory', 'list all patients'.
+           - Use INVENTORY/Quantitative for ANY request asking for a 'count', 'list', 'summary of all', or 'total' of ANY entity (e.g., patients, characters, books, invoices, items).
         2. Complexity (high|low)
+           - Use 'high' for any query requiring a global scan of the silo or math across multiple documents.
         3. Context Strategy:
-           - USE_MANIFEST: If user wants a list of names, a count of files, or structural overview.
-           - USE_RAG: If user asks deep questions about specific content inside files.
-           - HYBRID: For complex cross-document comparisons.
-        4. Key Entities (Names, Projects, Dates)
+           - USE_MANIFEST: For simple file lists or counts.
+           - USE_RAG: For deep questions about specific content inside 1-2 files.
+           - HYBRID: For complex comparisons, 'most common' style queries, or cross-document analysis.
+        4. Key Entities (Names, Projects, Dates, Entity Types)
         5. Constraints (Format, Tone, Language)
         
         Respond ONLY in JSON.";

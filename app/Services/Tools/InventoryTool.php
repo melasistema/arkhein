@@ -54,7 +54,7 @@ class InventoryTool extends AbstractTool
             $query->where('path', 'LIKE', $sqlPattern);
         }
 
-        $docs = $query->get(['path', 'summary']);
+        $docs = $query->get(['path', 'summary', 'metadata']);
 
         if ($docs->isEmpty()) {
             return [
@@ -64,7 +64,10 @@ class InventoryTool extends AbstractTool
             ];
         }
 
-        $list = $docs->map(fn($d) => "- {$d->path}" . ($d->summary ? " (Summary: {$d->summary})" : ""))->toArray();
+        $list = $docs->map(function($d) {
+            $type = $d->metadata['perception']['document_type'] ?? 'Unknown';
+            return "- [{$type}] {$d->path}" . ($d->summary ? " (Summary: {$d->summary})" : "");
+        })->toArray();
 
         return [
             'success' => true,

@@ -274,7 +274,9 @@ class ArchiveService
                 'checksum' => $checksum, 
                 'mime_type' => $mimeType,
                 'last_indexed_at' => now(),
-                'metadata' => array_merge($vessel->metadata ?? [], $result->metadata, ['perception' => $perception])
+                'metadata' => array_merge($vessel->metadata ?? [], $result->metadata, [
+                    'perception' => $perception
+                ])
             ]);
         }
 

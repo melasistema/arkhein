@@ -6,6 +6,7 @@ use App\Models\Document;
 use App\Models\ManagedFolder;
 use App\Models\SystemTask;
 use Illuminate\Support\Facades\Log;
+use App\Services\CognitiveService;
 
 class FileArchitectService
 {
