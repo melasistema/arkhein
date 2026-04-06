@@ -50,7 +50,7 @@ class DraftDocumentJob implements ShouldQueue
                 if ($task) {
                     $task->update(['description' => $progress]);
                 }
-            });
+            }, $this->path);
 
             // 3. Save the File
             $absolutePath = rtrim($this->folder->path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . ltrim($this->path, DIRECTORY_SEPARATOR);

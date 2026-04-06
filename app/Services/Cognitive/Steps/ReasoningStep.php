@@ -4,13 +4,17 @@ namespace App\Services\Cognitive\Steps;
 
 use Closure;
 use App\Services\OllamaService;
+use App\Services\CognitiveService;
 use App\Services\Cognitive\CognitivePayload;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\File;
 
 class ReasoningStep
 {
-    public function __construct(protected OllamaService $ollama) {}
+    public function __construct(
+        protected OllamaService $ollama,
+        protected CognitiveService $cognitive
+    ) {}
 
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
@@ -36,17 +40,16 @@ class ReasoningStep
 
     protected function physicalScratchpad(CognitivePayload $payload): string
     {
-        $workspaceDir = storage_path('app/arkhein/workspaces/' . $payload->folder->id);
-        File::ensureDirectoryExists($workspaceDir, 0777);
-        $scratchpadPath = $workspaceDir . DIRECTORY_SEPARATOR . 'scratchpad.md';
+        $folderId = (string) $payload->folder->id;
+        $filename = 'scratchpad.md';
 
-        $priorState = "";
-        if (File::exists($scratchpadPath)) {
-            $priorState = "PRIOR WORKSPACE STATE (Historical Reasoning):\n" . File::get($scratchpadPath) . "\n\n";
+        $priorState = $this->cognitive->readCoT('workspace', $folderId, $filename);
+        if ($priorState) {
+            $priorState = "PRIOR WORKSPACE STATE (Historical Reasoning):\n" . $priorState . "\n\n";
             Log::info("Arkhein Laboratory: Resuming from prior scratchpad state.");
         }
 
-        Log::info("Arkhein Laboratory: Working on physical scratchpad", ['path' => $scratchpadPath]);
+        Log::info("Arkhein Laboratory: Working on physical scratchpad for silo [{$folderId}]");
 
         $planStr = $payload->plan ?: "Perform deep analysis of the context to answer the user query accurately.";
 
@@ -67,7 +70,7 @@ class ReasoningStep
             'options' => ['temperature' => 0.1, 'num_ctx' => 16384]
         ]);
 
-        File::put($scratchpadPath, $reasoning);
+        $this->cognitive->persistCoT('workspace', $folderId, $filename, $reasoning);
 
         return $reasoning;
     }

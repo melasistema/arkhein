@@ -11,31 +11,51 @@ class FileArchitectService
 {
     public function __construct(
         protected OllamaService $ollama,
-        protected RagService $rag
+        protected RagService $rag,
+        protected CognitiveService $cognitive
     ) {}
 
     /**
      * Assemble a complex document using the Cognitive Layer Stack.
      */
-    public function assemble(ManagedFolder $folder, string $instruction, callable $onProgress = null): string
+    public function assemble(ManagedFolder $folder, string $instruction, callable $onProgress = null, string $targetPath = 'draft.md'): string
     {
         Log::info("Arkhein Architect: Starting Cognitive Assembly", ['instruction' => $instruction]);
+        
+        $folderId = (string) $folder->id;
+        $cotFilename = basename($targetPath) . ".architect.md";
+        $cotContent = "# Architect Workflow: {$targetPath}\n\n";
+        $cotContent .= "## Instruction\n> {$instruction}\n\n";
+        
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         // 1. THE DECONSTRUCTION LAYER (Planning)
         if ($onProgress) $onProgress("Deconstructing instruction into strategy...");
         $roadmap = $this->createRoadmap($instruction);
+        
+        $cotContent .= "## Phase 1: Roadmap\n{$roadmap}\n\n";
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         // 2. THE TARGETING LAYER
         if ($onProgress) $onProgress("Identifying target documents...");
         $targetPaths = $this->identifyTargets($folder, $instruction);
         
         if (empty($targetPaths)) {
+            $cotContent .= "## Phase 2: Targeting\nERROR: No relevant documents found.\n";
+            $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
             return "No relevant documents found to fulfill this instruction.";
         }
+        
+        $cotContent .= "## Phase 2: Targeting\nFound " . count($targetPaths) . " relevant documents.\n";
+        foreach($targetPaths as $p) $cotContent .= "- {$p}\n";
+        $cotContent .= "\n";
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         // 3. THE HARVESTING LAYER (with Latent Reasoning)
         $factMap = [];
         $targetPaths = array_values($targetPaths);
+        $cotContent .= "## Phase 3: Harvesting\n";
+        
         foreach ($targetPaths as $index => $path) {
             $count = $index + 1;
             $total = count($targetPaths);
@@ -44,16 +64,26 @@ class FileArchitectService
             $fact = $this->harvestFact($folder, $path, $instruction, $roadmap);
             if ($fact) {
                 $factMap[] = $fact;
+                $cotContent .= "### Source: {$path}\n{$fact}\n\n";
+                $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
             }
         }
 
         // 4. THE ASSEMBLY LAYER (Drafting)
         if ($onProgress) $onProgress("Drafting initial document...");
         $initialDraft = $this->synthesize($factMap, $instruction);
+        
+        $cotContent .= "## Phase 4: Initial Synthesis\n[Draft Generated]\n\n";
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
 
         // 5. THE SELF-CORRECTION LAYER (Critique & Refinement)
         if ($onProgress) $onProgress("Verifying accuracy and refining...");
-        return $this->refine($initialDraft, $factMap, $instruction);
+        $finalDraft = $this->refine($initialDraft, $factMap, $instruction);
+        
+        $cotContent .= "## Phase 5: Final Refinement\nRefinement completed.\n";
+        $this->cognitive->persistCoT('workspace', $folderId, $cotFilename, $cotContent);
+
+        return $finalDraft;
     }
 
     /**

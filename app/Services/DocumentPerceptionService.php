@@ -6,7 +6,10 @@ use Illuminate\Support\Facades\Log;
 
 class DocumentPerceptionService
 {
-    public function __construct(protected OllamaService $ollama) {}
+    public function __construct(
+        protected OllamaService $ollama,
+        protected CognitiveService $cognitive
+    ) {}
 
     /**
      * Perceive the semantic nature of a document and extract structured metadata.
@@ -14,10 +17,6 @@ class DocumentPerceptionService
      */
     public function perceive(string $content, string $filename, string $extension, int $folderId): array
     {
-        $workflowDir = storage_path("app/arkhein/workflows/{$folderId}");
-        \Illuminate\Support\Facades\File::ensureDirectoryExists($workflowDir, 0777);
-        $workflowPath = $workflowDir . DIRECTORY_SEPARATOR . "{$filename}.ingestion.md";
-
         Log::info("Arkhein Perception: Starting cognitive ingestion for {$filename}");
 
         $preview = mb_substr($content, 0, 6000);
@@ -42,7 +41,7 @@ class DocumentPerceptionService
         
         // Record workflow start
         $workflowContent = "# Ingestion Workflow: {$filename}\n\n## Phase 1: Structural Analysis\n{$analysis}\n\n";
-        \Illuminate\Support\Facades\File::put($workflowPath, $workflowContent);
+        $this->cognitive->persistCoT('workflow', (string) $folderId, "{$filename}.ingestion.md", $workflowContent);
 
         // Stage 2: Targeted Extraction based on Phase 1
         $stage2Prompt = "Stage 2: Targeted Data Extraction
@@ -79,6 +78,7 @@ class DocumentPerceptionService
         }
 
         $workflowContent .= "## Phase 2: Targeted Extraction\n```json\n" . json_encode($data, JSON_PRETTY_PRINT) . "\n```\n\n";
+        $this->cognitive->persistCoT('workflow', (string) $folderId, "{$filename}.ingestion.md", $workflowContent);
         
         // Stage 3: Summary & Synthesis
         $stage3Prompt = "Stage 3: Final Synthesis
@@ -87,7 +87,7 @@ class DocumentPerceptionService
         $summary = $this->ollama->generate($stage3Prompt);
         $workflowContent .= "## Phase 3: Final Synthesis\n{$summary}\n";
         
-        \Illuminate\Support\Facades\File::put($workflowPath, $workflowContent);
+        $this->cognitive->persistCoT('workflow', (string) $folderId, "{$filename}.ingestion.md", $workflowContent);
 
         return [
             'document_type' => $data['document_type'] ?? 'GENERAL_DOCUMENT',
