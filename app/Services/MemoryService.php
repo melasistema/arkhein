@@ -44,6 +44,10 @@ class MemoryService
                     File::makeDirectory($path, 0755, true);
                 }
 
+                // ARKHEIN CRITICAL: Always reset dimensions from config/settings to prevent static pollution
+                $dimensions = (int) Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions', 768));
+                Config::setDimensions($dimensions);
+                
                 // Set static Vektor config right before execution
                 Config::setDataDir((string) realpath($path));
                 
@@ -247,7 +251,14 @@ class MemoryService
                 foreach ($items as $item) {
                     $embedding = $item->embedding;
                     if (is_string($embedding)) $embedding = json_decode($embedding, true);
-                    if (!is_array($embedding) || count($embedding) !== $dimensions) continue;
+                    
+                    if (!is_array($embedding)) continue;
+
+                    // Validate dimensions to prevent silent fragment loss
+                    if (count($embedding) !== $dimensions) {
+                        Log::error("Arkhein Memory: Dimension mismatch for item [{$item->id}]. Expected {$dimensions}, got " . count($embedding) . ". Skipping.");
+                        continue;
+                    }
 
                     try {
                         $indexer->insert($item->id, $embedding);
