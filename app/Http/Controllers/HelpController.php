@@ -36,8 +36,8 @@ class HelpController extends Controller
         // 2. RESEARCHER: Surgical Retrieval
         $knowledge = [];
         if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
-            $limit = $strategy['rag_limit'] ?? 10;
-            $knowledge = $rag->recall($input, $limit);
+            $limit = $strategy['rag_limit'] ?? 15;
+            $knowledge = $rag->autoRecall($input, $limit);
         }
 
         // 3. SYNTHESIZER
@@ -74,12 +74,13 @@ class HelpController extends Controller
             // 2. RESEARCHER
             $knowledge = [];
             if ($strategy['intent'] === 'DATA' || $strategy['intent'] === 'BOTH') {
-                echo "data: " . json_encode(['event' => 'status', 'data' => 'Searching authorized silos...']) . "\n\n";
-                $limit = $strategy['rag_limit'] ?? 10;
-                $knowledge = $rag->recall($input, $limit);
+                echo "data: " . json_encode(['event' => 'status', 'data' => 'Surgical silo discovery...']) . "\n\n";
+                $limit = $strategy['rag_limit'] ?? 15;
+                $knowledge = $rag->autoRecall($input, $limit);
                 if (ob_get_level() > 0) ob_flush();
                 flush();
             }
+
 
             // 3. SYNTHESIZER
             echo "data: " . json_encode(['event' => 'status', 'data' => 'Synthesizing response...']) . "\n\n";
