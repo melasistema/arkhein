@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Sovereign Tree (Hierarchical RAG):** Introduced Level 3 "Canopy" summaries for managed folders, enabling top-down discovery and broad semantic awareness across silos.
+- **Canopy Discovery Layer:** Added `discover` capabilities to `RagService` and `GlobalRagService` to identify relevant silos before fragment retrieval.
+- **LLM Response Caching:** Implemented a deterministic caching layer in `OllamaService` for completions and embeddings to significantly reduce latency and compute cost.
+- **Shadow Rebuild Protocol:** Implemented zero-downtime index rebuilds using shadow partitions with atomic directory swaps.
+- **CoT Lifecycle Management:** Added automated cleanup and size enforcement for physical scratchpads to prevent disk bloat.
 - **Liquid Cognitive Pipeline:** Replaced the rigid reasoning stack with a dynamic Laravel Pipeline architecture, allowing simple queries to bypass heavy reasoning steps for maximum efficiency.
 - **Semantic Perception Layer:** Introduced `DocumentPerceptionService` to autonomously classify documents (e.g., INVOICE, CONTRACT) and extract structured metadata during ingestion.
 - **Stateful Reasoning:** Enabled iterative thinking by allowing the reasoning pipeline to read and evolve existing physical scratchpads in the laboratory.
@@ -44,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
+- **Threshold-Based Indexing:** Optimized `ArchiveService` to prefer live insertions for small updates, only triggering full Vektor rebuilds after significant change thresholds.
+- **Non-Blocking Ingestion:** Refactored `MemoryService` locking to allow concurrent read access to primary partitions while shadow indices are being built.
+- **Adaptive Context Retrieval:** Refined `ContextRetrievalStep` to dynamically adjust fragment limits (up to 50) based on query complexity and quantitative intent.
+- **Granular Reasoning Progress:** Enhanced the reasoning pipeline with phase-specific progress tracking and internal error recovery.
 - **Orchestration Decoupling:** Relieved `VerticalService` of its massive switch statement, delegating intent logic to the new Command Bus.
 - **Extraction Purity:** Refactored `ActionExtractor` to be a pure tool-mapping worker, moving domain-specific Librarian logic to autonomous commands.
 - **Workspace Lifecycle Management:** Integrated physical workspace management into `MemoryService`, ensuring automatic cleanup during silo de-authorization or global resets.
@@ -56,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vision Authorization UX:** Implemented context-aware confirmation dialogs for visual analysis to manage compute cost expectations.
 
 ### Fixed
+- **Dimensionality Drift:** Resolved critical "1536 vs 768" vector mismatch errors by enforcing strict dimensionality synchronization in the Vektor singleton.
+- **Architect Hallucination:** Eliminated generic data generation in the `/create` command by implementing strict non-hallucination mandates and verbose harvesting status.
+- **Perception Type Mismatch:** Resolved `TypeError` in the cognitive pipeline where LLMs occasionally returned intent or strategy as arrays instead of strings.
+- **Indexing Timeout:** Fixed `Lock timeout` errors during ingestion by isolating shadow operations from the primary partition lock.
+- **Cognitive Pipeline Resolution:** Fixed missing dependency injection and syntax errors in `CognitiveArbiter`.
 - **Silo-less Operation Stability:** Resolved 500 errors and null-pointer exceptions when using Arkhein in "Local" mode (silo-less).
 - **Inference Failure Consistency:** Synchronized engine failure messaging across the UI, service layer, and test suite for better UX.
 - **Deep Creation Failure:** Resolved an issue where `/create` failed to populate files with RAG-driven content under the 'Efficient' profile.
