@@ -308,6 +308,8 @@ class ArchiveService
                     $embedding,
                     $result->type,
                     [
+                        'folder_id' => $folder->id,
+                        'filename' => basename($filePath),
                         'chunk_index' => $index,
                         'total_chunks' => count($rawChunks),
                     ],

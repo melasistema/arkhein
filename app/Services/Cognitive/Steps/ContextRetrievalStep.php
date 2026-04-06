@@ -28,7 +28,10 @@ class ContextRetrievalStep
         // 2. RETRIEVE FRAGMENTS (For RAG or HYBRID)
         $limit = ($intent === 'Quantitative') ? 15 : 8;
         $fragments = $this->rag->recall($payload->query, $limit, $payload->folderId);
-        $ctx = collect($fragments)->map(fn($f) => "[{$f['metadata']['filename']}]: {$f['content']}")->implode("\n\n");
+        $ctx = collect($fragments)->map(function($f) {
+            $filename = $f['vessel']['filename'] ?? $f['metadata']['filename'] ?? 'Unknown Source';
+            return "[{$filename}]: {$f['content']}";
+        })->implode("\n\n");
 
         // 3. RAG ONLY
         if ($strategy === 'USE_RAG') {
