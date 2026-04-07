@@ -51,7 +51,8 @@ class HealSiloJob implements ShouldQueue
                 }
 
                 // 2. Standard Sync (This will ingest new files)
-                $report = $archive->indexFolder($this->folder, false, $task);
+                // If we removed ghosts, we FORCE a full rebuild at the end to clean Vektor.
+                $report = $archive->indexFolder($this->folder, $removedCount > 0, $task);
 
                 if ($task) {
                     $task->update([

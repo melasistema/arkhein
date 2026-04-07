@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-08
+
+### Added
+- **Hierarchical Auto-Recall:** Implemented a vector-optimized two-pass retrieval strategy (Discovery + Selective Recall) for the Global RAG.
+- **Global Laboratory Protocol:** Enabled full multi-step Chain of Thought (CoT) for "The Archivist" using a durable `global` physical workspace for cross-silo reasoning.
+- **Earthbeat Progress (7-Level):** Implemented granular progress tracking (10% to 95%) and status messages across the entire 7-level cognitive pipeline.
+
+### Changed
+- **Threshold-Based Indexing:** Optimized `ArchiveService` to prefer live insertions for small updates, only triggering full Vektor rebuilds after significant change thresholds.
+- **Sovereign Pipeline Alignment:** Refactored all cognitive steps (Decomposition, Reasoning, Synthesis) to strictly follow the 7-level architecture and nomenclature.
+
+### Fixed
+- **Inverted Sync Logic:** Resolved a critical bug where incremental updates were skipping live vector indexing, making them unsearchable without a full rebuild.
+- **Redundant Global Re-indexing:** Optimized `IndexFolderJob` and `HealSiloJob` to prevent unnecessary O(N) full-database vector rebuilds for small updates.
+- **Archivist Structural Blindness:** Fixed `InventoryTool` and `CognitiveArbiter` to ensure global queries return 100% accurate file counts via Canopy identification.
+- **Integrity Leakage:** Implemented cascading deletes for documents and knowledge fragments to prevent orphaned vector search results.
+- **Self-Healing Completeness:** Updated `HealSiloJob` to force Vektor rebuilds when ghost documents are purged, ensuring index-to-disk consistency.
+
 
 ## [0.1.0] - 2026-04-07
 
@@ -52,7 +70,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Strategic Scope UI:** Added a 'Global Search' tip to the Archivist interface to manage search depth expectations.
 
 ### Changed
-- **Threshold-Based Indexing:** Optimized `ArchiveService` to prefer live insertions for small updates, only triggering full Vektor rebuilds after significant change thresholds.
 - **Non-Blocking Ingestion:** Refactored `MemoryService` locking to allow concurrent read access to primary partitions while shadow indices are being built.
 - **Adaptive Context Retrieval:** Refined `ContextRetrievalStep` to dynamically adjust fragment limits (up to 50) based on query complexity and quantitative intent.
 - **Granular Reasoning Progress:** Enhanced the reasoning pipeline with phase-specific progress tracking and internal error recovery.
@@ -64,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Operational Protocols Refactoring:** Renamed `boundaries` to `protocols` in configuration with balanced limits (`silo_recursion_limit: 20`, `inference_timeout: 600s`).
 - **Archive Service Refactor:** Reworked `ArchiveService` to route content processing by MIME type and implemented throttled progress updates to reduce SQLite lock contention.
 - **Ingestion Robustness:** Increased `IndexFolderJob` timeout to 1 hour and refined ignore logic to only skip junk folders at the silo root.
-- **Lead-by-the-Hand UX:** Enhanced onboarding with strict multi-model verification (LLM, Vision, Embedding) before unlocking system actions.
+- **Lead-by-Hand UX:** Enhanced onboarding with strict multi-model verification (LLM, Vision, Embedding) before unlocking system actions.
 - **Vision Authorization UX:** Implemented context-aware confirmation dialogs for visual analysis to manage compute cost expectations.
 
 ### Fixed
@@ -90,7 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Atomic Partition Scoping:** Implemented a re-entrant locking mechanism in `MemoryService` to isolate Vektor partitions and prevent static race conditions.
 - **State Integrity Hashing:** Added a `binary_hash` system (md5 of count/dimensions/update_time) to detect drift between SQLite SSOT and Vektor binary indices, eliminating redundant O(N) rebuilds.
-- **Lead-by-the-Hand Onboarding:** Strict UI locking for folder authorization and indexing until recommended models are verified as installed.
+- **Lead-by-Hand Onboarding:** Strict UI locking for folder authorization and indexing until recommended models are verified as installed.
 - **Smart Model Matching:** Auto-detection of `mistral` vs `mistral:latest` and sane config-based fallbacks during first boot and settings initialization.
 - **Non-Blocking Boot Checks:** Memory integrity verification is now dispatched `afterResponse()` to prevent UI hangs on startup.
 - **Fail-Safe Locking:** Added 5-second non-blocking locks with timeouts to `MemoryService` to ensure application responsiveness under high load.

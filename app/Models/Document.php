@@ -30,6 +30,17 @@ class Document extends Model
         'last_indexed_at' => 'datetime',
     ];
 
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted(): void
+    {
+        static::deleting(function (Document $document) {
+            // Delete all related knowledge fragments
+            $document->fragments()->delete();
+        });
+    }
+
     public function folder(): BelongsTo
     {
         return $this->belongsTo(ManagedFolder::class, 'folder_id');
