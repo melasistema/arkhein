@@ -139,9 +139,13 @@ class ArchiveService
 
             if ($this->shouldIgnore($relativePath)) continue;
             
-            // For incremental mode, we set skipIndex=false to allow live insertions
-            // unless we are in forceFull mode where we prefer bulk rebuild at the end.
-            $res = $this->indexFile($folder, $file->getRealPath(), $forceFull, !$forceFull);
+            // Optimization Logic:
+            // 1. If it's a forceFull index, we skip live indexing to favor the final bulk rebuild (much faster).
+            // 2. If it's a new folder (no last_indexed_at), we also skip live indexing for the same reason.
+            // 3. Otherwise (incremental), we use live insertion so the changes are immediately available.
+            $skipLiveIndex = $forceFull || is_null($folder->last_indexed_at);
+
+            $res = $this->indexFile($folder, $file->getRealPath(), $forceFull, $skipLiveIndex);
             if ($res['chunks'] > 0) {
                 $indexedFiles++;
                 $totalChunks += $res['chunks'];
@@ -150,10 +154,11 @@ class ArchiveService
         }
 
         // Phase 2: 90% -> 100% (Vektor binary rebuild)
-        // Optimization: Only rebuild if many changes occurred or forceFull is requested.
-        // Small updates are handled by live insertions in indexFile.
-        $rebuildThreshold = config('arkhein.memory.rebuild_threshold', 10); // Rebuild if >10 files changed
-        $shouldRebuild = $forceFull || ($anyChanges && $indexedFiles > $rebuildThreshold);
+        // Optimization: Only rebuild if many changes occurred, it's a new folder, or forceFull is requested.
+        // Small incremental updates are handled by live insertions in indexFile.
+        $rebuildThreshold = config('arkhein.memory.rebuild_threshold', 10);
+        $isNewFolder = is_null($folder->last_indexed_at);
+        $shouldRebuild = $forceFull || $isNewFolder || ($anyChanges && $indexedFiles > $rebuildThreshold);
 
         if ($shouldRebuild) {
             if ($task) $task->update(['description' => 'Optimizing vector search index...', 'progress' => 95]);

@@ -58,10 +58,6 @@ class IndexFolderJob implements ShouldQueue
              try {
                  $report = $archive->indexFolder($this->folder, false, $task);
 
-                 // Final Global Reconciliation to ensure aggregate index is in sync
-                 $dimensions = (int) \App\Models\Setting::get('embedding_dimensions', config('services.ollama.embedding_dimensions'));
-                 $memory->rebuildGlobalIndex($dimensions);
-
                  // Level 0 Grounding: Scan the environment
                  app(\App\Services\EnvironmentScanner::class)->scan($this->folder);
 
