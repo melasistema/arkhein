@@ -24,18 +24,20 @@ class GlobalRagService
             return [];
         }
 
+        return $this->recallByVector($embedding, $limit, $type);
+    }
+
+    /**
+     * Search across all partitions using an existing vector.
+     */
+    public function recallByVector(array $vector, int $limit = 20, ?string $type = null): array
+    {
         // We use the 'null' partition for global search
-        $results = $this->memory->search($embedding, $limit, null, null);
+        $results = $this->memory->search($vector, $limit, null, null);
 
         if ($type) {
             $results = array_values(array_filter($results, fn($r) => $r['type'] === $type));
         }
-
-        Log::info("Arkhein Global RAG: Search Results", [
-            'count' => count($results),
-            'partition' => 'global',
-            'type_filter' => $type
-        ]);
 
         return $results;
     }
@@ -48,20 +50,36 @@ class GlobalRagService
         return $this->recall($query, $limit, 'silo_summary');
     }
 
+    public function discoverByVector(array $vector, int $limit = 5): array
+    {
+        return $this->recallByVector($vector, $limit, 'silo_summary');
+    }
+
     /**
      * Smart Recall: Automatically performs Discovery + Selective Partition Recall.
      * This is the "Sovereign Tree" implementation for Global RAG.
      */
     public function autoRecall(string $query, int $fragmentLimit = 15): array
     {
-        Log::info("Arkhein Global RAG: Starting Hierarchical Auto-Recall");
+        $embedding = $this->ollama->embeddings($query);
+        if (!$embedding) return [];
+
+        return $this->autoRecallByVector($embedding, $fragmentLimit);
+    }
+
+    /**
+     * Vector-optimized Auto-Recall to avoid redundant embedding calls.
+     */
+    public function autoRecallByVector(array $vector, int $fragmentLimit = 15): array
+    {
+        Log::info("Arkhein Global RAG: Starting Hierarchical Auto-Recall (Vector Optimized)");
 
         // 1. DISCOVERY PASS (Level 3 Canopy)
-        $silos = $this->discover($query, 3);
+        $silos = $this->discoverByVector($vector, 3);
         
         if (empty($silos)) {
             Log::info("Arkhein Global RAG: No specific silos discovered. Falling back to global fragment search.");
-            return $this->recall($query, $fragmentLimit);
+            return $this->recallByVector($vector, $fragmentLimit);
         }
 
         $allFragments = [];
@@ -76,13 +94,23 @@ class GlobalRagService
             
             // Allocate fragment budget per silo
             $perSiloLimit = max(5, (int) ($fragmentLimit / $siloCount));
-            $fragments = $this->memory->search($this->ollama->embeddings($query), $perSiloLimit, null, $folderId);
+            $fragments = $this->memory->search($vector, $perSiloLimit, null, $folderId);
             
             foreach ($fragments as $f) {
                 // Annotate fragment with its canopy context for the synthesizer
                 $f['canopy_summary'] = $silo['content'];
                 $allFragments[] = $f;
             }
+        }
+
+        // 3. GLOBAL FALLBACK: If we still have budget, get top global hits too
+        if (count($allFragments) < 5) {
+             $globalFragments = $this->recallByVector($vector, 5);
+             foreach ($globalFragments as $gf) {
+                 if (!collect($allFragments)->contains('id', $gf['id'])) {
+                     $allFragments[] = $gf;
+                 }
+             }
         }
 
         return $allFragments;

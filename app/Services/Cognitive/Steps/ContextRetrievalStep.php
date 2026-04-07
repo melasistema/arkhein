@@ -4,16 +4,24 @@ namespace App\Services\Cognitive\Steps;
 
 use Closure;
 use App\Services\RagService;
+use App\Services\GlobalRagService;
 use App\Services\Cognitive\CognitivePayload;
+use Illuminate\Support\Facades\Log;
 
 class ContextRetrievalStep
 {
-    public function __construct(protected RagService $rag) {}
+    public function __construct(
+        protected RagService $rag,
+        protected GlobalRagService $globalRag
+    ) {}
 
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
         if ($payload->task) {
-            $payload->task->update(['description' => 'Retrieving high-signal context...']);
+            $payload->task->update([
+                'progress' => 20,
+                'description' => 'Level 2: Retrieving high-signal context...'
+            ]);
         }
 
         $strategy = $payload->perception['strategy'] ?? 'HYBRID';
@@ -43,10 +51,18 @@ class ContextRetrievalStep
             default => ($complexity === 'high' ? 25 : 10),
         };
 
-        $fragments = $this->rag->recall($payload->query, $limit, $payload->folderId);
+        // GLOBAL VS LOCAL RECALL
+        if (!$payload->folderId) {
+            Log::info("Arkhein Cognitive: Global query detected. Using Hierarchical Auto-Recall.");
+            $fragments = $this->globalRag->autoRecall($payload->query, $limit);
+        } else {
+            $fragments = $this->rag->recall($payload->query, $limit, $payload->folderId);
+        }
+
         $ctx = collect($fragments)->map(function($f) {
             $filename = $f['vessel']['filename'] ?? $f['metadata']['filename'] ?? 'Unknown Source';
-            return "[{$filename}]: {$f['content']}";
+            $canopyInfo = isset($f['canopy_summary']) ? "\nSILO CONTEXT: " . $f['canopy_summary'] : "";
+            return "[{$filename}]: {$f['content']}{$canopyInfo}";
         })->implode("\n\n");
 
         // 3. RAG ONLY

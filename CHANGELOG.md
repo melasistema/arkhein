@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+
+## [0.1.0] - 2026-04-07
+
 ### Added
 - **Sovereign Tree (Hierarchical RAG):** Introduced Level 3 "Canopy" summaries for managed folders, enabling top-down discovery and broad semantic awareness across silos.
 - **Canopy Discovery Layer:** Added `discover` capabilities to `RagService` and `GlobalRagService` to identify relevant silos before fragment retrieval.

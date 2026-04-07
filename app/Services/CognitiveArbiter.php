@@ -54,12 +54,16 @@ class CognitiveArbiter
         // Level 3 Discovery: If no folder specified, or if we want to enrich context,
         // we use the Canopy Level to find relevant silos.
         $discoveryContext = "";
+        $discoveredSiloId = null;
         if (!$folderId) {
             $silos = $this->globalRag->discover($query, 3);
             if (!empty($silos)) {
                 $discoveryContext = "### GLOBAL DISCOVERY (Level 3 Canopy):\n";
-                foreach ($silos as $s) {
+                foreach ($silos as $index => $s) {
                     $discoveryContext .= "RELEVANT SILO: [ID: {$s['metadata']['folder_id']}]\nSUMMARY: {$s['content']}\n\n";
+                    if ($index === 0 && ($s['score'] ?? 0) > 0.8) {
+                        $discoveredSiloId = $s['metadata']['folder_id'];
+                    }
                 }
             }
         }
@@ -102,12 +106,21 @@ class CognitiveArbiter
 
             // 1.5 Actionable Inventory (The Sovereign Coordinator)
             $intent = strtolower($payload->perception['intent'] ?? '');
-            $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything)\b/i', $query);
+            $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything|most|common|top|frequent|proportion|how many|entire)\b/i', $query);
 
             if ($intent === 'inventory' || ($intent === 'quantitative' && $hasHighIntensityKeywords)) {
                 if ($task) $task->update(['description' => 'Querying structural inventory...']);
+                
                 $tool = new \App\Services\Tools\InventoryTool();
-                $result = $tool->execute(['pattern' => $payload->perception['entities'][0] ?? null], $folder);
+                $toolParams = ['pattern' => $payload->perception['entities'][0] ?? null];
+                
+                // If we are in global mode but Canopy discovered a strong silo match, use it.
+                if (!$folder && $discoveredSiloId) {
+                    $toolParams['folder_id'] = $discoveredSiloId;
+                    Log::info("Arkhein Cognitive: Targeting inventory for discovered silo [ID: {$discoveredSiloId}]");
+                }
+
+                $result = $tool->execute($toolParams, $folder);
                 
                 if ($result['success']) {
                     // Inject the true manifest into the scratchpad/context instead of RAG fragments
@@ -119,7 +132,10 @@ class CognitiveArbiter
             // Dynamically assemble the rest of the pipeline based on complexity
             $complexity = strtolower($payload->perception['complexity'] ?? 'low');
             $hasHighIntensityKeywords = preg_match('/\b(all|every|list|count|total|inventory|summarize everything|most|common|top|frequent|proportion|how many|entire)\b/i', $query);
-            $isComplex = (in_array($intent, ['quantitative', 'structural', 'creative']) || $complexity === 'high' || $hasHighIntensityKeywords);
+            $isWorkspaceEnabled = (bool) config('arkhein.protocols.agent_workspace_enabled', false);
+            
+            // Forced full cognitive load for complex tasks OR when we want durable CoT via Workspace
+            $isComplex = (in_array($intent, ['quantitative', 'structural', 'creative']) || $complexity === 'high' || $hasHighIntensityKeywords || $isWorkspaceEnabled);
 
             $remainingSteps = [];
 

@@ -32,7 +32,10 @@ class HarvestingStep
         if (($intent === 'quantitative' || $intent === 'inventory') && $hasHighIntensityKeywords && $payload->folder) {
             
             if ($payload->task) {
-                $payload->task->update(['description' => 'Performing structural data harvest...']);
+                $payload->task->update([
+                    'progress' => 30,
+                    'description' => 'Level 2/3: Performing structural data harvest...'
+                ]);
             }
 
             Log::info("Arkhein Harvesting: Starting global silo scan for '{$payload->query}'");

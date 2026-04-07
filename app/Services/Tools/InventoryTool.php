@@ -15,7 +15,7 @@ class InventoryTool extends AbstractTool
 
     public function getDescription(): string
     {
-        return "Get a complete and accurate list of files in the current silo. Use this for 'how many' or 'list all' requests.";
+        return "Get a complete and accurate list of files across one or all silos. Use this for 'how many' or 'list all' requests.";
     }
 
     public function getSchema(): array
@@ -27,10 +27,9 @@ class InventoryTool extends AbstractTool
                     'type' => 'string',
                     'description' => 'Optional glob-style pattern to filter files (e.g. MR-*)'
                 ],
-                'group_by' => [
-                    'type' => 'string',
-                    'enum' => ['folder', 'none'],
-                    'description' => 'How to organize the results.'
+                'folder_id' => [
+                    'type' => 'integer',
+                    'description' => 'Optional ID of a specific silo to target.'
                 ]
             ]
         ];
@@ -43,42 +42,46 @@ class InventoryTool extends AbstractTool
 
     public function execute(array $params, ?ManagedFolder $folder = null): array
     {
-        if (!$folder) {
-            return ['success' => false, 'error' => 'No folder context provided.'];
-        }
+        $folderId = $params['folder_id'] ?? ($folder ? $folder->id : null);
+        
+        $query = Document::query();
 
-        $query = Document::where('folder_id', $folder->id);
+        if ($folderId) {
+            $query->where('folder_id', $folderId);
+        }
 
         if (!empty($params['pattern'])) {
             $sqlPattern = str_replace('*', '%', $params['pattern']);
             $query->where('path', 'LIKE', $sqlPattern);
         }
 
-        $docs = $query->get(['path', 'summary', 'metadata']);
+        $docs = $query->get(['path', 'summary', 'metadata', 'folder_id']);
 
         if ($docs->isEmpty()) {
+            $target = $folderId ? "silo [ID: {$folderId}]" : "all silos";
             return [
                 'success' => true,
                 'data' => [],
-                'message' => "No files found matching the criteria in @{$folder->name}."
+                'message' => "No files found matching the criteria in {$target}."
             ];
         }
 
-        $list = $docs->map(function($d) {
+        $list = $docs->map(function($d) use ($folderId) {
             $type = $d->metadata['perception']['document_type'] ?? 'Unknown';
-            return "- [{$type}] {$d->path}" . ($d->summary ? " (Summary: {$d->summary})" : "");
+            $siloInfo = !$folderId ? " [Silo ID: {$d->folder_id}]" : "";
+            return "- [{$type}] {$d->path}{$siloInfo}" . ($d->summary ? " (Summary: {$d->summary})" : "");
         })->toArray();
 
         return [
             'success' => true,
             'data' => $list,
             'count' => $docs->count(),
-            'message' => "I found {$docs->count()} matching files in the @{$folder->name} silo."
+            'message' => "I found {$docs->count()} matching files."
         ];
     }
 
     public function describeAction(array $params): string
     {
-        return "Performing structural inventory of the silo.";
+        return "Performing structural inventory of the silos.";
     }
 }

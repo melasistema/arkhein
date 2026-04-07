@@ -13,10 +13,13 @@ class SelfCritiqueStep
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
         if ($payload->task) {
-            $payload->task->update(['description' => 'Performing self-critique and verification...']);
+            $payload->task->update([
+                'progress' => 85,
+                'description' => 'Level 6: Performing self-critique and verification...'
+            ]);
         }
 
-        $prompt = "Level 5 (Self-Critique): Review your reasoning for errors or hallucinations.
+        $prompt = "Level 6 (Self-Critique): Review your reasoning for errors or hallucinations.
         REASONING: {$payload->scratchpad}
         CONTEXT: {$payload->context}
         

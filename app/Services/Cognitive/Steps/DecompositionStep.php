@@ -13,14 +13,17 @@ class DecompositionStep
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
         if ($payload->task) {
-            $payload->task->update(['description' => 'Decomposing task into sub-goals...']);
+            $payload->task->update([
+                'progress' => 40,
+                'description' => 'Level 4: Decomposing task into sub-goals...'
+            ]);
         }
 
         $intent = strtolower($payload->perception['intent'] ?? 'informational');
         $schema = $payload->folder?->environmental_schema ?? [];
         $schemaStr = !empty($schema) ? json_encode($schema, JSON_PRETTY_PRINT) : "No schema.";
 
-        $prompt = "Level 3 (Decomposition): Create a detailed execution plan for an autonomous agent.
+        $prompt = "Level 4 (Decomposition): Create a detailed execution plan for an autonomous agent.
         USER QUERY: \"{$payload->query}\"
         INTENT: {$intent}
         MANIFEST:

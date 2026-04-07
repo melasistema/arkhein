@@ -13,7 +13,10 @@ class SynthesisStep
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
         if ($payload->task) {
-            $payload->task->update(['description' => 'Synthesizing final response...']);
+            $payload->task->update([
+                'progress' => 95,
+                'description' => 'Level 7: Synthesizing final response...'
+            ]);
         }
 
         $intent = $payload->perception['intent'] ?? 'Informational';
@@ -21,7 +24,7 @@ class SynthesisStep
         // PRIORITIZATION: If we have an agentic scratchpad (Phase-based), use it as the source of truth.
         $verifiedData = !empty($payload->scratchpad) ? $payload->scratchpad : ($payload->verified ?: $payload->context);
 
-        $prompt = "Level 6 (Generation): Synthesize the final user-facing response based on the AGENTIC REASONING.
+        $prompt = "Level 7 (Generation): Synthesize the final user-facing response based on the AGENTIC REASONING.
         
         SOVEREIGN MANDATE:
         You are Arkhein, a local and private agent. You are working on the USER'S OWN data which they have explicitly authorized.

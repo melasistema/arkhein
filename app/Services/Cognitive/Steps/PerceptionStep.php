@@ -13,7 +13,10 @@ class PerceptionStep
     public function __invoke(CognitivePayload $payload, Closure $next)
     {
         if ($payload->task) {
-            $payload->task->update(['description' => 'Perceiving intent and constraints...']);
+            $payload->task->update([
+                'progress' => 10,
+                'description' => 'Level 1: Perceiving intent and constraints...'
+            ]);
         }
 
         $schema = $payload->folder?->environmental_schema ?? [];
